@@ -108,6 +108,13 @@ class BoltzmannSAS():
 
         return self.belief
     
+    def get_belief(self):
+        belief = {}
+        for opidx in self.boltzmann_operator_indices.values():
+            belief[opidx] = self.belief[opidx].get_belief()
+        
+        return belief
+    
     def get_belief_stats(self):
         param_stats = {}
         for opidx in self.boltzmann_operator_indices.values():

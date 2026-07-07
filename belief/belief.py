@@ -92,6 +92,10 @@ class JointGridBelief(Belief):
         self.p_params = self.normalize(new_p)
 
 
+    def get_belief(self):
+        return self.p_params
+
+
     def get_stats(self): 
         betas  = np.array([b for (b, a) in self.p_params.keys()])
         alphas = np.array([a for (b, a) in self.p_params.keys()])

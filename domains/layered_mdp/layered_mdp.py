@@ -270,7 +270,7 @@ class LayeredMDP(object):
             # fresh permutation of {-1, 0, 1}
             # rewards: permutation of {-1, 0, 1} — hardcoded for 3 actions
             assert num_actions == 3, "Structured rewards currently only support 3 actions"
-            rewards = rng.permutation([-1.0, 0.0, 1.0])
+            rewards = rng.permutation([0.0, 1.0, 2.0])
 
             for sidx, state in enumerate(layer):
                 enabled_actions[state] = actions

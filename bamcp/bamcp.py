@@ -435,11 +435,14 @@ class BAMCPSolver():
         return is_advice, is_defer, is_auto
     
 
+    def get_belief(self):
+        return self.bamdp.get_belief()
+    
     def get_belief_stats(self):
         return self.bamdp.get_belief_stats()
 
 
-    def run(self, s0=None, total_reward=0, total_steps=0, is_defer_vec=None, is_advice_vec=None, is_auto_vec=None, belief_stats=None, rewards=None, cum_rewards=None, max_steps=np.inf):
+    def run(self, s0=None, total_reward=0, total_steps=0, is_defer_vec=None, is_advice_vec=None, is_auto_vec=None, belief_vec=None, belief_stats=None, rewards=None, cum_rewards=None, max_steps=np.inf):
         state = s0 if s0 is not None else self.bamdp.s0 
         history = History(items=(state,))
         total_reward = total_reward 
@@ -447,6 +450,7 @@ class BAMCPSolver():
         is_defer_vec   = is_defer_vec   if is_defer_vec   is not None else []
         is_advice_vec  = is_advice_vec  if is_advice_vec  is not None else []
         is_auto_vec    = is_auto_vec    if is_auto_vec    is not None else []
+        belief_vec     = belief_vec     if belief_vec     is not None else []
         belief_stats   = belief_stats   if belief_stats   is not None else []
         rewards        = rewards        if rewards        is not None else []
         cum_rewards    = cum_rewards    if cum_rewards    is not None else []
@@ -520,6 +524,7 @@ class BAMCPSolver():
 
             #print("Updating belief...")
             self.update_belief(hist_data)
+            belief_vec.append(self.get_belief())
             belief_stats.append(self.get_belief_stats())
             #print("New belief stats: ", self.get_belief_stats())
             #input("Next...\n")
@@ -538,6 +543,7 @@ class BAMCPSolver():
             "is_defer": is_defer_vec, 
             "is_advice": is_advice_vec, 
             "is_auto": is_auto_vec, 
+            "belief": belief_vec,
             "belief_stats": belief_stats,
             "history": history,
             "followed_advice": followed_advice

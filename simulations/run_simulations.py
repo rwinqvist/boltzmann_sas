@@ -3,20 +3,24 @@ from domains.layered_mdp.layered_mdp import LayeredMDP
 from simulations.approach import Approach
 from simulations.scoring_functions import generate_scoring_function
 from simulations.utils import load_all_sims
-from simulations.plotting import plot_results
+from simulations.plotting import plot_results, plot_belief_heatmaps, plot_reward_and_belief_heatmaps
 from simulations.runners import run_standard_bamcp, run_bayesian_naive_warmstart
 
 
 def main():
     SEED = 5
-    depth = 100
+    depth = 20
     num_actions = 3
     true_beta = 0.5
     true_alpha = 1
-    n_warmstart = 30
+    n_warmstart = 10
     num_sims = 8
     beta_grid = [0, 0.5, 1.0, 1.5, 2.0, 2.5]
     alpha_grid = [0, 0.5, 1.0, 1.5, 2.0]
+
+    if n_warmstart > depth: 
+        raise ValueError("Warm start phase longer than depth of MDP. Exiting program!")
+
 
     config = {
         "seed": SEED,
@@ -39,10 +43,14 @@ def main():
 
     save_results = True
     is_toy = True
+    debug = True 
     if not save_results:
         print("WARNING! NOT SAVING RESULTS!")
     if is_toy:
         print("WARNING! You're saying under TOY")
+    if debug:
+        print("WARNING! Debug mode on")
+        fn_app = "debug"
 
     # n_jobs=-1 uses all available cores. Drop to e.g. os.cpu_count() - 1
     # if you want to keep a core free while these run in the background.
@@ -51,13 +59,13 @@ def main():
     run_standard_bamcp(
         config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
         auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, fn_app=fn_app,
-        save_results=save_results, n_jobs=n_jobs,
+        save_results=save_results, n_jobs=n_jobs, debug=debug,
     )
 
     run_bayesian_naive_warmstart(
         config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims, n_warmstart,
         auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, fn_app=fn_app,
-        save_results=save_results, n_jobs=n_jobs,
+        save_results=save_results, n_jobs=n_jobs, debug=debug
     )
 
     results_bamcp = load_all_sims(
@@ -76,7 +84,8 @@ def main():
         Approach.NAIVE_BAYESIAN_WARMSTART: results_bayesian_warmstart,
     }
 
-    plot_results(results_by_approach=results_by_approach, config=config, n_warmstart=n_warmstart)
+    #plot_results(results_by_approach=results_by_approach, config=config, n_warmstart=n_warmstart)
+    plot_reward_and_belief_heatmaps(results_by_approach, config)
 
     for approach, results_list in results_by_approach.items():
         all_followed = [sum(r["followed_advice"]) for r in results_list]

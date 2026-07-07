@@ -4,6 +4,7 @@ import random
 import joblib
 import numpy as np
 from joblib import Parallel, delayed
+from itertools import product
 
 from operators.context import OperatorContext
 from operators.utils import OperatorParams, OperatorType
@@ -79,8 +80,17 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
 
 
 def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", save_results=True, n_jobs=-1):
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", save_results=True, n_jobs=-1, debug=False):
     print("\nApproach: Standard BAMCP")
+
+    if debug: 
+        n = len(beta_grid) * len(alpha_grid)
+        p_params = {(b, a): 0 for b, a in product(beta_grid, alpha_grid)}
+        p_params[(beta_grid[0], alpha_grid[0])] = 1
+        init_belief = JointGridBelief(p_params)
+    else: 
+        init_belief = JointGridBelief.uniform(beta_values=beta_grid, alpha_values=alpha_grid)
+
     bhuman1 = OperatorContext(
         category=OperatorType.BHUMAN,
         n=1,
@@ -89,7 +99,7 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
         domain_transitions=domain.T_det,
         cost_nominals=cost_nominals,
         params=OperatorParams(beta=true_beta, alpha=true_alpha),
-        init_belief=JointGridBelief.uniform(beta_values=beta_grid, alpha_values=alpha_grid),
+        init_belief=init_belief,
         nom_scoring=Phi_nom,
     )
 
@@ -132,7 +142,7 @@ def _run_naive_freq_warmstart_one_sim(sim, domain, operator_contexts, auto_op_co
     total_reward = 0
     total_steps = 0
     is_defer_vec, is_advice_vec, is_auto_vec = [], [], []
-    belief_stats, rewards, cum_rewards = [], [], []
+    belief_vec, belief_stats, rewards, cum_rewards = [], [], [], []
     is_advice = is_auto = 0
     is_defer = 1
 
@@ -150,6 +160,7 @@ def _run_naive_freq_warmstart_one_sim(sim, domain, operator_contexts, auto_op_co
         rewards.append(reward)
 
         bamdp.update_belief(obs)
+        belief_vec.append(bamdp.get_belief())
         belief_stats.append(bamdp.get_belief_stats())
 
         history = history.add_entry(defer_action, executed_action, next_state)
@@ -161,7 +172,7 @@ def _run_naive_freq_warmstart_one_sim(sim, domain, operator_contexts, auto_op_co
     bamcp = BAMCPSolver(bamdp, max_depth=MAX_DEPTH)
     results = bamcp.run(
         s0=state, total_reward=total_reward, total_steps=total_steps, is_defer_vec=is_defer_vec,
-        is_advice_vec=is_advice_vec, is_auto_vec=is_auto_vec, belief_stats=belief_stats,
+        is_advice_vec=is_advice_vec, is_auto_vec=is_auto_vec, belief_vec=belief_vec, belief_stats=belief_stats,
         rewards=rewards, cum_rewards=cum_rewards,
     )
     total_time = time.perf_counter() - start
@@ -231,10 +242,11 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
     total_reward = 0
     total_steps = 0
     is_defer_vec, is_advice_vec, is_auto_vec = [], [], []
-    belief_stats, rewards, cum_rewards = [], [], []
+    belief_vec, belief_stats, rewards, cum_rewards = [], [], [], []
     is_advice = is_auto = 0
     is_defer = 1
 
+    belief_vec.append(bamdp.get_belief())
     belief_stats.append(bamdp.get_belief_stats())
 
     defer_action = (0, DEFER)
@@ -251,6 +263,7 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
         rewards.append(reward)
 
         bamdp.update_belief(obs)
+        belief_vec.append(bamdp.get_belief())
         belief_stats.append(bamdp.get_belief_stats())
 
         history = history.add_entry(defer_action, executed_action, next_state)
@@ -262,7 +275,7 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
     bamcp = BAMCPSolver(bamdp, max_depth=MAX_DEPTH)
     results = bamcp.run(
         s0=state, total_reward=total_reward, total_steps=total_steps, is_defer_vec=is_defer_vec,
-        is_advice_vec=is_advice_vec, is_auto_vec=is_auto_vec, belief_stats=belief_stats,
+        is_advice_vec=is_advice_vec, is_auto_vec=is_auto_vec, belief_vec=belief_vec, belief_stats=belief_stats,
         rewards=rewards, cum_rewards=cum_rewards,
     )
     total_time = time.perf_counter() - start
@@ -278,8 +291,17 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
 
 def run_bayesian_naive_warmstart(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
                                   n_warmstart, auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="",
-                                  save_results=True, n_jobs=-1):
+                                  save_results=True, n_jobs=-1, debug=False):
     print("\nApproach: Bayesian naive warmstart")
+
+    if debug: 
+        n = len(beta_grid) * len(alpha_grid)
+        p_params = {(b, a): 0 for b, a in product(beta_grid, alpha_grid)}
+        p_params[(beta_grid[0], alpha_grid[0])] = 1
+        init_belief = JointGridBelief(p_params)
+    else: 
+        init_belief = JointGridBelief.uniform(beta_values=beta_grid, alpha_values=alpha_grid)
+
     bhuman1 = OperatorContext(
         category=OperatorType.BHUMAN,
         n=1,
@@ -288,7 +310,7 @@ def run_bayesian_naive_warmstart(config, domain, Phi_nom, true_beta, true_alpha,
         domain_transitions=domain.T_det,
         cost_nominals=cost_nominals,
         params=OperatorParams(beta=true_beta, alpha=true_alpha),
-        init_belief=JointGridBelief.uniform(beta_values=beta_grid, alpha_values=alpha_grid),
+        init_belief=init_belief,
         nom_scoring=Phi_nom,
     )
 
