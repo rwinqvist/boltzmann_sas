@@ -51,7 +51,7 @@ def build_sas(domain, operator_contexts):
 # ============================================================
 
 def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                            true_beta, true_alpha, seed, is_toy, fn_app, save_results):
+                            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results):
     """ Runs a single standard-BAMCP simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
@@ -61,7 +61,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app,
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
     )
     if os.path.exists(fn):
         print("Results already exist!")
@@ -80,7 +80,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
 
 
 def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", save_results=True, n_jobs=-1, debug=False):
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False):
     print("\nApproach: Standard BAMCP")
 
     if debug: 
@@ -108,7 +108,7 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_std_bamcp_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, save_results,
+            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results,
         )
         for sim in range(num_sims)
     )
@@ -220,7 +220,7 @@ def run_naive_freq_warmstart(config, domain, Phi_nom, true_beta, true_alpha, cos
 # ============================================================
 
 def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                                     true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, save_results):
+                                     true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, grid_tag, save_results):
     """ Runs a single Bayesian-warmstart simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
@@ -230,7 +230,7 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.NAIVE_BAYESIAN_WARMSTART, n_warmstart=n_warmstart,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app,
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
     )
     if os.path.exists(fn):
         print("Results already exist!")
@@ -290,7 +290,7 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
 
 
 def run_bayesian_naive_warmstart(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                                  n_warmstart, auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="",
+                                  n_warmstart, auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="",
                                   save_results=True, n_jobs=-1, debug=False):
     print("\nApproach: Bayesian naive warmstart")
 
@@ -321,7 +321,7 @@ def run_bayesian_naive_warmstart(config, domain, Phi_nom, true_beta, true_alpha,
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_bayesian_warmstart_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, save_results,
+            true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, grid_tag, save_results,
         )
         for sim in range(num_sims)
     )

@@ -84,7 +84,7 @@ def plot_belief_heatmap(ax, values, matrix, true_value=None, title=None, ylabel=
     return im
  
  
-def plot_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", save_path=None):
+def old_plot_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", save_path=None):
     """
     Plot beta and alpha marginal-belief heatmaps (probability mass by value, over
     simulation step), one row per approach, averaged across that approach's sims.
@@ -128,7 +128,121 @@ def plot_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belie
         plt.show()
 
 
-def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", colors=None, save_path=None):
+def plot_belief_heatmaps(ax, values, matrix, true_value=None, title=None, ylabel=None, cmap="viridis", vmax=None):
+    """
+    Plot one parameter's belief-over-time heatmap on a given axis.
+ 
+    :param vmax: colorbar upper bound. Defaults to this panel's own max value
+        (auto-scaled) rather than a fixed 1.0 — a uniform prior on a fine grid
+        has much lower peak-cell probability than the same confidence on a
+        coarse grid purely from bin count, so a fixed 0-1 scale makes finer
+        grids look artificially less concentrated. Pass an explicit value if
+        you need multiple panels on the same fixed scale for direct comparison.
+    """
+    if vmax is None:
+        vmax = matrix.max() if matrix.max() > 0 else 1.0
+ 
+    im = ax.imshow(
+        matrix, aspect="auto", origin="lower", cmap=cmap, vmin=0.0, vmax=vmax,
+        extent=[0, matrix.shape[1], -0.5, len(values) - 0.5],
+    )
+    ax.set_yticks(range(len(values)))
+    ax.set_yticklabels(values)
+    ax.set_xlabel("Step", fontsize=12)
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=12)
+    if title:
+        ax.set_title(title, fontsize=12)
+ 
+    if true_value is not None and true_value in values:
+        row = values.index(true_value)
+        ax.axhline(row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
+        ax.legend(fontsize=9, loc="upper right")
+ 
+    return im
+
+def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief",
+                                     colors=None, save_path=None, display_res_beta=None, display_res_alpha=None):
+    """
+    Plot layout:
+        Row 0:    [cumulative reward, all approaches overlaid | DEFER rate, all approaches overlaid]
+        Row 1..n: [β heatmap | α heatmap] for each approach
+ 
+    :param display_res_beta: if set, coarsen the beta belief onto a display grid with this
+        spacing before plotting (e.g. 0.5), even if the belief was estimated on a finer grid.
+    :param display_res_alpha: same, for alpha.
+    """
+    true_beta = config["true_beta"]
+    true_alpha = config["true_alpha"]
+ 
+    approaches = list(results_by_approach.keys())
+    n_rows = len(approaches)
+ 
+    default_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    if colors is None:
+        colors = {}
+ 
+    fig, axes = plt.subplots(n_rows + 1, 2, figsize=(13, 4.5 * (n_rows + 1)))
+ 
+    # --- row 0: shared reward + DEFER rate comparison across approaches ---
+    for i, approach in enumerate(approaches):
+        results_list = results_by_approach[approach]
+        label = approach.value if hasattr(approach, "value") else approach
+        color = colors.get(label, default_cycle[i % len(default_cycle)])
+ 
+        cum_rewards = pad_and_stack([r["cum_rewards"] for r in results_list])
+        plot_mean_std(axes[0][0], cum_rewards, label, color)
+ 
+        defer_series = pad_and_stack([r["is_defer"] for r in results_list])
+        plot_mean_std(axes[0][1], defer_series, label, color, plot_std=False)
+ 
+    axes[0][0].set_xlabel("Step", fontsize=12)
+    axes[0][0].set_ylabel("Cumulative reward", fontsize=12)
+    axes[0][0].set_title("Cumulative reward", fontsize=12)
+    axes[0][0].legend(fontsize=10)
+    axes[0][0].grid(alpha=0.3)
+ 
+    axes[0][1].set_xlabel("Step", fontsize=12)
+    axes[0][1].set_ylabel("DEFER rate", fontsize=12)
+    axes[0][1].set_title("DEFER rate over steps", fontsize=12)
+    axes[0][1].legend(fontsize=10)
+    axes[0][1].grid(alpha=0.3)
+    axes[0][1].set_ylim(-0.05, 1.05)
+ 
+    # --- rows 1..n: per-approach belief heatmaps ---
+    for i, approach in enumerate(approaches):
+        results_list = results_by_approach[approach]
+        label = approach.value if hasattr(approach, "value") else approach
+ 
+        beta_values, beta_matrix = average_marginal_matrices(results_list, BETA_INDEX, opidx=opidx, belief_key=belief_key)
+        alpha_values, alpha_matrix = average_marginal_matrices(results_list, ALPHA_INDEX, opidx=opidx, belief_key=belief_key)
+ 
+        if display_res_beta is not None:
+            beta_values, beta_matrix = coarsen_marginal(beta_values, beta_matrix, display_res_beta)
+        if display_res_alpha is not None:
+            alpha_values, alpha_matrix = coarsen_marginal(alpha_values, alpha_matrix, display_res_alpha)
+ 
+        im_b = plot_belief_heatmaps(
+            axes[i + 1][0], beta_values, beta_matrix, true_value=true_beta,
+            title=f"{label}: β belief over time", ylabel="β",
+        )
+        im_a = plot_belief_heatmaps(
+            axes[i + 1][1], alpha_values, alpha_matrix, true_value=true_alpha,
+            title=f"{label}: α belief over time", ylabel="α",
+        )
+        fig.colorbar(im_b, ax=axes[i + 1][0], label="P(value)")
+        fig.colorbar(im_a, ax=axes[i + 1][1], label="P(value)")
+ 
+    plt.tight_layout()
+ 
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"Saved: {save_path}")
+    else:
+        plt.show()
+
+
+def old_plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", colors=None, save_path=None):
     """
     Plot layout:
         Row 0:    [cumulative reward, all approaches overlaid | DEFER rate, all approaches overlaid]
@@ -225,6 +339,32 @@ def compute_marginal_matrix(belief_history, param_index, opidx=0, values=None):
         matrix[:, t] = marginal
  
     return values, matrix
+
+def coarsen_marginal(values, matrix, display_res, decimals=6):
+    """
+    Aggregate a fine-grained marginal belief matrix onto a coarser display grid,
+    by summing the probability mass of each fine-grid value into the nearest
+    coarse bin. Use when the belief was computed on a fine grid (for estimation
+    precision) but a coarse grid is easier to read visually — this recovers the
+    same absolute probability mass a coarse-grid belief would show directly,
+    rather than just rescaling colors to make a fine grid look comparable.
+ 
+    :param values: sorted list of fine-grid values (rows of `matrix`)
+    :param matrix: (n_fine_values x n_steps) marginal probability matrix
+    :param display_res: target coarse grid spacing, e.g. 0.5. Should be a
+        multiple of the underlying fine-grid resolution.
+    """
+    def to_coarse(v):
+        return round(round(v / display_res) * display_res, decimals)
+ 
+    coarse_values = sorted({to_coarse(v) for v in values})
+    coarse_index = {cv: i for i, cv in enumerate(coarse_values)}
+ 
+    coarse_matrix = np.zeros((len(coarse_values), matrix.shape[1]))
+    for i, v in enumerate(values):
+        coarse_matrix[coarse_index[to_coarse(v)], :] += matrix[i, :]
+ 
+    return coarse_values, coarse_matrix
 
 
 def plot_mean_std(ax, data_2d, label, color, alpha=0.2, plot_std=True):

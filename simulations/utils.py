@@ -17,7 +17,7 @@ def get_results_dir(domain_name, is_toy=False):
     return f"{ROOT_DIR}/simulations/{domain_name}_simulations/{subfolder}"
 
 
-def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, true_beta, true_alpha, seed, sim, n_warmstart=0, is_toy=False, fn_app=""):
+def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, true_beta, true_alpha, seed, sim, n_warmstart=0, is_toy=False, fn_app="", grid_tag=""):
     results_dir = get_results_dir(domain_name, is_toy)
 
     if approach == Approach.BAMCP:
@@ -26,21 +26,23 @@ def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, t
         approach_tag = f"{approach.value}_n{n_warmstart}"
     else:
         raise ValueError(f"Unhandled approach: {approach}")
+    
+    grid_suffix = f"_{grid_tag}" if grid_tag is not "" else ""
 
-    fn = f"{results_dir}/{domain_tag}_h{num_humans}_a{num_autos}/{approach_tag}/true_b{true_beta}_a{true_alpha}/s{seed}_sim{sim}{fn_app}.joblib"
+    fn = f"{results_dir}/{domain_tag}_h{num_humans}_a{num_autos}/{approach_tag}{grid_tag}/true_b{true_beta}_a{true_alpha}/s{seed}_sim{sim}{fn_app}.joblib"
     check_fn(fn)
     return fn
 
 
 def load_all_sims(domain_name, domain_tag, approach: Approach, true_beta, true_alpha, seed,
-                   num_sims, num_autos, n_warmstart=0, is_toy=False, fn_app=""):
+                   num_sims, num_autos, n_warmstart=0, is_toy=False, fn_app="", grid_tag=""):
     """ Load all sim results for a given approach into a list. """
     all_results = []
     for sim in range(1, num_sims + 1):
         fn = get_results_path(
             domain_name=domain_name, domain_tag=domain_tag, num_humans=1, num_autos=num_autos,
             approach=approach, n_warmstart=n_warmstart, true_beta=true_beta, true_alpha=true_alpha,
-            seed=seed, sim=sim, is_toy=is_toy, fn_app=fn_app,
+            seed=seed, sim=sim, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
         )
         results = joblib.load(fn)
         all_results.append(results)
