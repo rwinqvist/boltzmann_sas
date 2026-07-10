@@ -517,7 +517,7 @@ def _run_std_vi_one_sim(sim, domain, policy, operator_contexts, auto_op_contexts
 
 
 def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False):
+                        auto_op_contexts, is_toy=False, fn_app="", save_results=True, n_jobs=-1, debug=False):
     print("\nApproach: Standard VI")
 
     bhuman1 = OperatorContext(
@@ -535,18 +535,28 @@ def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, cost_nominal
     results = {}
     
     mdp = build_sas(domain, operator_contexts, model_type=MDP)
-    policy_fn = get_vi_policy_path(domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1, num_autos=len(auto_op_contexts), 
+    policy_fn = get_vi_policy_path(domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1, num_autos=len(auto_op_contexts), 
                                    true_beta=true_beta, true_alpha=true_alpha, seed=seed, is_toy=is_toy, fn_app=fn_app)
-    start = time.perf_counter()
-    Q, V, policy = value_iteration(model=mdp)
-    total_time = time.perf_counter() - start 
-    results["Q"] = Q 
-    results["V"] = V
-    results["policy"] = policy 
-    results["total_time"] = total_time
-
-    Q, V, policy = value_iteration(model=mdp)
-
+    
+    if os.path.exists(policy_fn):
+        print("Policy already exists. Loading it from file")
+        data = joblib.load(policy_fn)
+        policy = data["policy"]
+        total_time = data["total_time"]
+    
+    else:
+        results = {}
+        start = time.perf_counter()
+        Q, V, policy = value_iteration(model=mdp)
+        total_time = time.perf_counter() - start 
+        results["Q"] = Q 
+        results["V"] = V
+        results["policy"] = policy 
+        results["total_time"] = total_time
+        print(f"VI done in {total_time:.1f}s")
+        joblib.dump(results, policy_fn)
+    
+    exit()
     
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_std_vi_one_sim)(

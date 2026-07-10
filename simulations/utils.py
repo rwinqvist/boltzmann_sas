@@ -20,10 +20,10 @@ def get_policy_dir(domain_name, is_toy=False):
     subfolder = "toy_policies" if is_toy else ""
     return f"{ROOT_DIR}/simulations/policies/{domain_name}policies/{subfolder}"
 
-def get_vi_policy_path(domain_name, domain_tag, num_humans, num_autos, true_beta, true_alpha, seed, sim, is_toy=False, fn_app=""):
+def get_vi_policy_path(domain_name, domain_tag, num_humans, num_autos, true_beta, true_alpha, seed, is_toy=False, fn_app=""):
     policy_dir = get_policy_dir(domain_name, is_toy)
     
-    fn = f"{policy_dir}/{domain_tag}_h{num_humans}_a{num_autos}/true_b{true_beta}_a{true_alpha}/s{seed}_sim{sim}{fn_app}.joblib"
+    fn = f"{policy_dir}/{domain_tag}_h{num_humans}_a{num_autos}/true_b{true_beta}_a{true_alpha}/s{seed}_{fn_app}.joblib"
     check_fn(fn)
     return fn
 

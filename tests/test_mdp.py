@@ -85,10 +85,13 @@ def main():
     )
 
     operator_contexts = [bhuman1] + list(auto_op_contexts)
-    results = {}
+
+    run_standard_vi(config=config, domain=domain, Phi_nom=Phi_nom, true_beta=true_beta, true_alpha=true_alpha,
+                    cost_nominals=cost_nominals, seed=SEED, num_sims=num_sims, auto_op_contexts=auto_op_contexts, is_toy=is_toy,
+                    fn_app=fn_app, save_results=save_results, n_jobs=n_jobs)
+
     
-    mdp = build_sas(domain, operator_contexts, model_type=MDP)
-    
+
 
 def build_sas(domain, operator_contexts, model_type):
     operators = get_operators(operator_contexts)
