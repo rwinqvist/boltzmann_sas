@@ -44,5 +44,3 @@ class AutonomousOperator(Operator):
 
         return cls(num_states, actions, enabled_actions, domain_transitions)
     
-    
-

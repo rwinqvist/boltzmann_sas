@@ -4,6 +4,7 @@ import random
 import math
 from itertools import product
 from scipy.optimize import minimize_scalar
+from scipy.stats import norm 
 from boltzmann_sas.globals import DEFER
 from operators.utils import OperatorParams
 from belief.observation import Observation
@@ -34,6 +35,32 @@ class Belief(ABC):
     @abstractmethod
     def get_stats(self): 
         """ Return mean and std of params under current belief. """
+
+    @abstractmethod 
+    def get_beta_credible_bound(self, confidence=0.1):
+        """
+        Return a PESSIMISTIC (lower-tail) credible bound on beta at the given
+        confidence level -- e.g. confidence=0.1 returns roughly the 10th
+        percentile of the current belief's marginal distribution over beta.
+ 
+        Used to conservatively evaluate whether alpha is still identifiable
+        (via Fisher information, which increases with beta up to a point):
+        evaluating at a pessimistic-low beta means "collapse alpha" decisions
+        only trigger when safe even in the worst plausible case, guarding
+        against premature collapse from a temporarily-low beta estimate.
+ 
+        :param confidence: tail probability, e.g. 0.1 = 10th percentile lower bound
+        """
+
+    @abstractmethod
+    def freeze_alpha(self, alpha_value):
+        """
+        Collapse alpha to a single fixed value, preserving beta's current
+        marginal distribution. After this call, subsequent update_belief()
+        calls should naturally continue refining beta only (alpha has no
+        remaining uncertainty to update).
+        """
+
 
 
     def sample_discrete(self, distribution:dict):
@@ -114,6 +141,50 @@ class JointGridBelief(Belief):
         }
 
         return stats
+    
+    def get_beta_marginal(self):
+        """ Sum out alpha to get the marginal distribution over beta: {beta: prob} """
+        marginal = {}
+        for (beta, alpha), p in self.p_params.items():
+            marginal[beta] = marginal.get(beta, 0.0) + p 
+        return marginal 
+    
+    def get_alpha_marginal(self):
+        """ Sum out beta to get the marginal distribution over alpha: {alpha: prob}. """
+        marginal = {}
+        for (beta, alpha), p in self.p_params.items():
+            marginal[alpha] = marginal.get(alpha, 0.0) + p
+        return marginal
+    
+    def get_beta_credible_bound(self, confidence=0.1):
+        """
+        Discrete VaR-style lower-tail bound: the smallest beta value such that
+        the cumulative probability mass at or below it is >= confidence.
+        Same logic as compute_discrete_VaR applied to the beta marginal specifically.
+        """
+        marginal = self.get_beta_marginal()
+        cum_prob = 0.0
+        prev_beta = next(iter(marginal)) # fallback: smallest grid value 
+        for beta, p in sorted(marginal.items()):
+            cum_prob += p 
+            if cum_prob >= confidence:
+                return beta 
+            prev_beta = beta 
+        return prev_beta 
+    
+
+    def freeze_alpha(self, alpha_value):
+        """
+        Collapse onto a single alpha value, keeping beta's current marginal
+        distribution intact. After this call, p_params only has one alpha
+        value in its support, so update_belief() naturally continues to
+        refine beta only -- no changes needed there.
+        """
+        beta_marginal = self.get_beta_marginal()
+        self.p_params = {(b, alpha_value): p for b, p in beta_marginal.items()}
+    
+
+
 
     def __str__(self):
         items = sorted(self.p_params.items(), key=lambda x: -x[1])
@@ -297,6 +368,32 @@ class FreqBelief(Belief):
         }
 
         return stats
+    
+
+    def get_alpha_marginal(self):
+        """ Alpha is already tracked marginally (not jointly with beta) in this belief. """
+        return self.p_alpha
+    
+    def freeze_alpha(self, alpha_value):
+        """ Collapse alpha's belief to a point mass at alpha_value. """
+        self.p_alpha = {alpha_value: 1.0}
+
+        
+    def get_beta_credible_bound(self, confidence=0.1):
+        """
+        Gaussian-approximation lower-tail bound, using the MLE beta_hat and its
+        asymptotic std (from inverse Fisher information, see compute_mle_variance).
+        confidence=0.1 -> beta_hat + z_{0.1} * beta_std, where z_{0.1} < 0, i.e.
+        the 10th percentile of a Normal(beta_hat, beta_std^2).
+        """
+        if self.beta_hat is None or self.beta_std is None:
+            raise ValueError("beta_hat/beta_std unavailable: no DEFER observations collected yet.")
+        if not np.isfinite(self.beta_std):
+            return 0.0  # infinite uncertainty -> most conservative possible bound
+        z = norm.ppf(confidence)  # negative for confidence < 0.5
+        return max(0.0, self.beta_hat + z * self.beta_std)  # clip at 0 since beta > 0 by construction
+ 
+
 
 
     

@@ -51,6 +51,18 @@ class Operator(ABC):
             Construct operator from OperatorContext object.
         """
 
+    def get_action_likelihoods(self, domain_state, internal_state, issued_domain_action, parameters=None):
+        state = (domain_state, internal_state)
+        enabled_actions = self.enabled_actions[state]
+        likelihoods = {}
+        for action in enabled_actions:
+            if action == issued_domain_action:
+                likelihoods[action] = 1 
+            else: 
+                likelihoods[action] = 0
+
+        return likelihoods
+
 
     def resolve_domain_action_choice(self, domain_state, internal_state, issued_domain_action, parameter=None):
         """ Resolve operator's domain action choice based on suggested `issued_domain_action`. Defaults to full compliance and rationality, i.e., issued_domain_action. """

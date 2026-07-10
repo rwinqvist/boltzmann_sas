@@ -108,6 +108,18 @@ class BoltzmannHumanOperator(Operator):
         return self.nom_beta ** self.state
     
 
+    def get_action_likelihoods(self, domain_state, internal_state, issued_domain_action, parameters=None):
+        enabled_actions = self.enabled_actions[domain_state]
+        likelihoods = {}
+        params = parameters if parameters is not None else self.params
+
+        for action in enabled_actions:
+            p = self.boltzmann_kernel(domain_state, internal_state, action, issued_domain_action, params)
+            likelihoods[action] = p 
+        
+        return likelihoods
+
+
     def resolve_domain_action_choice(self, domain_state, op_state, issued_domain_action, params: Optional[OperatorParams] = None):
         """ Resolve operator's domain action choice based on suggested `issued_domain_action`. Based on Boltzmann kernel. """
 

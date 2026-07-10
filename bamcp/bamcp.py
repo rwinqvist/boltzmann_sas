@@ -3,7 +3,7 @@ import datetime as dt
 import math
 import random
 from typing import Optional
-from boltzmann_sas.boltzmann_sas import BoltzmannSAS
+from boltzmann_sas.boltzmann_bamdp import BoltzmannBAMDP
 from boltzmann_sas.globals import DEFER
 from operators.utils import OperatorParams
 from bamcp.history import History
@@ -89,7 +89,7 @@ class BAMCP():
     """
         BAMCP based on UCT.
     """
-    def __init__(self, bamdp:BoltzmannSAS, objective:Objective, max_entropy_rollout=False, uct_weight=None, max_depth=100, history=History(), debug=False):
+    def __init__(self, bamdp:BoltzmannBAMDP, objective:Objective, max_entropy_rollout=False, uct_weight=None, max_depth=100, history=History(), debug=False):
         self.bamdp = bamdp 
         self.objective = objective 
         self.max_entropy_rollout = max_entropy_rollout
@@ -200,11 +200,15 @@ class BAMCP():
         max_duration = dt.timedelta(milliseconds=t)
         time_exceeded = False 
 
+        trial = 0
         while not time_exceeded:
+            trial += 1
             parameters = self.bamdp.sample_parameters(num_samples=1)[0]
             self.trial(history, tree_level, parent_node, parent_action, parameters)
             time_exceeded = dt.datetime.now() - start > max_duration
-
+        
+        #print("num trials: ", trial)
+        #input("Continue...")
     
     def trial(self, initial_history:History, initial_tree_level=0, parent_node:Node=None, parent_action=None, op_parametrizations:Optional[dict[int, OperatorParams]]=None):
         """ 
@@ -266,6 +270,17 @@ class BAMCP():
                 rollout_parameters[opidx] = OperatorParams(beta=0, alpha=op_parametrization.alpha)
         else: 
             rollout_parameters = op_parametrizations
+        
+        # for alpha_test in [0.0, 0.5, 1.0, 1.5, 2.0]:
+        #     rollout_parameters = {0: OperatorParams(beta=rollout_parameters[0].beta, alpha=alpha_test)}
+        #     values = [self.rollout(current_history, rollout_parameters, 2) for _ in range(30)]
+        #     #value = self.rollout(current_history, rollout_parameters, max_depth)
+        #     # # PRINT
+        #     print(f"alpha={alpha_test}: mean={np.mean(values):.2f}, std={np.std(values):.2f}, stderr={np.std(values)/np.sqrt(30):.2f}")
+        #     #print(f"beta={rollout_parameters[0].beta}, alpha={alpha_test}: rollout value={value:.2f}")
+
+            
+        # exit()
         rollout_reward = self.rollout(current_history, rollout_parameters, max_depth)
 
         # Backpropagation 
@@ -382,7 +397,7 @@ class BAMCP():
 
 class BAMCPSolver():
     """ A BAMCP solver. """
-    def __init__(self, bamdp:BoltzmannSAS, max_depth, t=2000, num_trials=0, objective:Objective=None, max_entropy_rollout=False):
+    def __init__(self, bamdp:BoltzmannBAMDP, max_depth, t=2000, num_trials=0, objective:Objective=None, max_entropy_rollout=False):
         self.bamdp = bamdp 
         self.max_depth = max_depth 
         self.t = t 
@@ -397,7 +412,8 @@ class BAMCPSolver():
         objective = self.objective if self.objective is not None else Objective(rollout=random_rollout, max_objective=True)
         
         return BAMCP(self.bamdp, objective, self.max_entropy_rollout, max_depth=self.max_depth)
-    
+
+        
     def get_next_action(self, history:History):
         """ Get next action for history from policy. """
         if len(history) == 1:

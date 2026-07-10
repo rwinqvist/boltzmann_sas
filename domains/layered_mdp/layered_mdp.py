@@ -300,7 +300,13 @@ class LayeredMDP(object):
 
 
     def get_next_states(self, state, action): 
-        return self.T_structure[(state, action)]
+        return self.T_det[0][(state, action)]
+    
+    def get_next_state(self, state, action): 
+        next_states = self.T_det[0][(state, action)]
+        for next_state, p in next_states.items():
+            if p != 0:
+                return next_state
     
 
     

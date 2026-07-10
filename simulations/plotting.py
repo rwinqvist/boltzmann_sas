@@ -76,9 +76,16 @@ def plot_belief_heatmap(ax, values, matrix, true_value=None, title=None, ylabel=
     if title:
         ax.set_title(title, fontsize=12)
  
-    if true_value is not None and true_value in values:
-        row = values.index(true_value)
-        ax.axhline(row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
+    # if true_value is not None and true_value in values:
+    #     row = values.index(true_value)
+    #     ax.axhline(row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
+    #     ax.legend(fontsize=9, loc="upper right")
+
+    if true_value is not None:
+        lb = values[0]
+        res = values[1] - values[0]
+        exact_row = (true_value - lb) / res
+        ax.axhline(exact_row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
         ax.legend(fontsize=9, loc="upper right")
  
     return im
@@ -154,12 +161,20 @@ def plot_belief_heatmaps(ax, values, matrix, true_value=None, title=None, ylabel
     if title:
         ax.set_title(title, fontsize=12)
  
-    if true_value is not None and true_value in values:
-        row = values.index(true_value)
-        ax.axhline(row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
+    # if true_value is not None and true_value in values:
+    #     row = values.index(true_value)
+    #     ax.axhline(row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
+    #     ax.legend(fontsize=9, loc="upper right")
+
+    if true_value is not None:
+        lb = values[0]
+        res = values[1] - values[0]
+        exact_row = (true_value - lb) / res
+        ax.axhline(exact_row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
         ax.legend(fontsize=9, loc="upper right")
  
     return im
+
 
 def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief",
                                      colors=None, save_path=None, display_res_beta=None, display_res_alpha=None):
@@ -184,7 +199,7 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
  
     fig, axes = plt.subplots(n_rows + 1, 2, figsize=(13, 4.5 * (n_rows + 1)))
  
-    # --- row 0: shared reward + DEFER rate comparison across approaches ---
+    # --- row 0: shared reward + action-rate (DEFER/ADVICE/AUTO) comparison across approaches ---
     for i, approach in enumerate(approaches):
         results_list = results_by_approach[approach]
         label = approach.value if hasattr(approach, "value") else approach
@@ -194,7 +209,13 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
         plot_mean_std(axes[0][0], cum_rewards, label, color)
  
         defer_series = pad_and_stack([r["is_defer"] for r in results_list])
-        plot_mean_std(axes[0][1], defer_series, label, color, plot_std=False)
+        advice_series = pad_and_stack([r["is_advice"] for r in results_list])
+        auto_series = pad_and_stack([r["is_auto"] for r in results_list])
+ 
+        x = np.arange(defer_series.shape[1])
+        axes[0][1].plot(x, defer_series.mean(axis=0), color=color, linestyle="-", linewidth=2, label=f"{label} (DEFER)")
+        axes[0][1].plot(x, advice_series.mean(axis=0), color=color, linestyle="--", linewidth=2, label=f"{label} (ADVICE)")
+        axes[0][1].plot(x, auto_series.mean(axis=0), color=color, linestyle=":", linewidth=2, label=f"{label} (AUTO)")
  
     axes[0][0].set_xlabel("Step", fontsize=12)
     axes[0][0].set_ylabel("Cumulative reward", fontsize=12)
@@ -203,11 +224,12 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
     axes[0][0].grid(alpha=0.3)
  
     axes[0][1].set_xlabel("Step", fontsize=12)
-    axes[0][1].set_ylabel("DEFER rate", fontsize=12)
-    axes[0][1].set_title("DEFER rate over steps", fontsize=12)
-    axes[0][1].legend(fontsize=10)
+    axes[0][1].set_ylabel("Rate", fontsize=12)
+    axes[0][1].set_title("DEFER / ADVICE / AUTO rate over steps", fontsize=12)
+    axes[0][1].legend(fontsize=8, ncol=1)
     axes[0][1].grid(alpha=0.3)
     axes[0][1].set_ylim(-0.05, 1.05)
+ 
  
     # --- rows 1..n: per-approach belief heatmaps ---
     for i, approach in enumerate(approaches):
@@ -240,7 +262,6 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
         print(f"Saved: {save_path}")
     else:
         plt.show()
-
 
 def old_plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", colors=None, save_path=None):
     """
