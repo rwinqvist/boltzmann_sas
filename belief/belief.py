@@ -36,6 +36,10 @@ class Belief(ABC):
     def get_stats(self): 
         """ Return mean and std of params under current belief. """
 
+    @abstractmethod
+    def get_params_est(self):
+        """ Return current estimate"""
+
     @abstractmethod 
     def get_beta_credible_bound(self, confidence=0.1):
         """
@@ -141,6 +145,17 @@ class JointGridBelief(Belief):
         }
 
         return stats
+    
+    def get_params_est(self):
+        # use mean for now
+        betas  = np.array([b for (b, a) in self.p_params.keys()])
+        alphas = np.array([a for (b, a) in self.p_params.keys()])
+        probs  = np.array(list(self.p_params.values()))
+
+        beta_mean  = np.sum(probs * betas)
+        alpha_mean = np.sum(probs * alphas)
+
+        return beta_mean, alpha_mean
     
     def get_beta_marginal(self):
         """ Sum out alpha to get the marginal distribution over beta: {beta: prob} """

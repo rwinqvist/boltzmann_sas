@@ -121,7 +121,15 @@ class BoltzmannBAMDP():
             param_stats[opidx] = self.belief[opidx].get_stats()
 
         return param_stats
-            
+    
+    def get_params_est(self):
+        beta_hat, alpha_hat = None, None
+        params_ests = {}
+        for opidx in self.boltzmann_operator_indices.values():
+            beta_hat, alpha_hat = self.belief[opidx].get_params_est()
+            params_ests[opidx] = OperatorParams(beta=beta_hat, alpha=alpha_hat)
+
+        return params_ests
 
     def reset_belief(self):
         self.belief = {opidx: boltzmann_op.init_belief.clone() for opidx, boltzmann_op in enumerate(self.boltzmann_operators)}

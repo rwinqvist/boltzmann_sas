@@ -1,116 +1,115 @@
 import numpy as np
 from common.math_utils import boltzmann, shift_scores
-
-def fisher_info_beta(scores, beta):
-    """
-    I(beta) = Var_p(s), where p = softmax(beta * scores).
- 
-    This is the NAIVE (single-parameter) Fisher information for beta: it
-    assumes alpha (already baked into `scores` via shift_scores, if this is
-    an ADVICE observation) is known. Under DEFER, `scores` has no alpha
-    dependence at all, so this is also the correct marginal information.
-    Under ADVICE, use fisher_info_joint() below for the honest marginal value.
-    """
-    p = boltzmann(scores, beta)
-    scores = np.array(scores, dtype=float)
-    Es = np.sum(p * scores)
-    Es2 = np.sum(p * scores ** 2)
-    return Es2 - Es ** 2
+from belief.observation import Observation
+from boltzmann_sas.globals import DEFER
 
 
-def fisher_info_alpha(scores, advised_idx, beta):
+def fisher_info_defer(nominal_scores, beta):
     """
-    I(alpha) = beta^2 * p_k * (1 - p_k), where p_k is the EFFECTIVE
-    (post-advice-shift) probability of the advised action.
- 
-    NAIVE (single-parameter): assumes beta is known. Only defined for ADVICE
-    observations (advised_idx is not None) — DEFER carries no information
-    about alpha at all, by construction of the model.
+        I_0(theta)(s;beta), per-observation Fisher information contribution from a single
+        DEFER observation. Only the beta-beta entry (A, in Proposition 1) is non-zero, 
+        since DEFER carries no information about alpha.
+
+        Returns a 2x2 array [[A_i, 0], [0, 0]], A_i = Var_nu(Phi)
+        under nu = softmax(beta*nominal_scores)
     """
-    if advised_idx is None:
-        return 0.0
-    p = boltzmann(scores, beta)
+
+    p = boltzmann(nominal_scores, beta)
+    s = np.asarray(nominal_scores, dtype="float")
+    E_s = np.sum(p*s)
+    E_s2 = np.sum(p*s**2)
+    A_i = E_s2 - E_s**2
+
+    return np.array([[A_i, 0], [0, 0]])
+
+
+def fisher_info_advice(nominal_scores, advised_idx, beta, alpha):
+    """
+    I_1(theta)(s, a_D; beta, alpha). Per-observation Fisher information contribution 
+    from a single ADVICE observation (advised_idx = index of advised action). Contributes to 
+    all three entries A, B, C since alpha is identifiable (in principle) from ADVICE observations.
+
+    effective_scores = nominal_score + alpha*g, where g is the indicator of the advised action.
+    nu_tilde = softmax(beta*effective_scores)
+
+    Returns a 2x2 array [[A_j, C_j], [C_j, B_j]]:
+    A_j = Var_nu_tilde(effective_scores)
+    B_j = beta^2 * p_k * (1 - p_k),  p_k = nu_tilde(advised action)
+    C_j = beta * p_k * (s_k - E_nu_tilde[effective_scores])
+    """
+
+    effective_scores = np.asarray(nominal_scores, dtype="float").copy()
+    effective_scores[advised_idx] += alpha
+    p = boltzmann(effective_scores, beta)
+    E_s = np.sum(p * effective_scores)
+    E_s2 = np.sum(p * effective_scores ** 2)
+    A_j = E_s2 - E_s ** 2
+
     p_k = p[advised_idx]
-    return (beta ** 2) * p_k * (1 - p_k)
+    B_j = (beta ** 2) * p_k * (1 - p_k)
+
+    s_k = effective_scores[advised_idx]
+    C_j = beta * p_k * (s_k - E_s)
+
+    return np.array([[A_j, C_j], [C_j, B_j]])
 
 
-def fisher_info_cross(scores, advised_idx, beta):
+def observation_to_scores(obs: Observation, enabled_actions:dict):
     """
-    I(beta, alpha) = beta * p_k * (s_k - E_p[s]).
- 
-    The cross/off-diagonal term of the joint Fisher information matrix.
-    Measures how entangled beta and alpha are in a given observation: large
-    when advising an action whose (shifted) score sits far from the mean
-    score (e.g. advising an already-strong action), meaning the observed
-    outcome is ambiguous between "high beta" and "large alpha effect".
-    Exactly zero under DEFER (alpha doesn't appear in the scores at all).
+    Adapter: extract (nominal_scores, advised_idx) from an Observation,
+    in the form fisher_info_defer or form fisher_info_advice expect.
+
+    nominal_scores: list of Phi values, one per enabled action at obs's domain_state
+    advised_idx; index into that list of the advised issued action, or None if this was a DEFER observation
     """
-    if advised_idx is None:
-        return 0.0
-    p = boltzmann(scores, beta)
-    scores = np.array(scores, dtype=float)
-    Es = np.sum(p * scores)
-    return beta * p[advised_idx] * (scores[advised_idx] - Es)
+    actions = enabled_actions[obs.domain_state]
+    nominal_scores = [
+        obs.operator.nom_scoring[obs.op_state][(obs.domain_state, a)]
+        for a in actions
+    ]
+
+    if obs.issued_domain_action == DEFER:
+        advised_idx = None 
+    else: 
+        advised_idx = actions.index(obs.issued_domain_action)
+
+    return nominal_scores, advised_idx
 
 
-def fisher_info_alpha_ceiling(beta):
+def accumulate_fisher_info(observations, beta_hat, alpha_hat, enabled_actions):
     """
-    Theoretical BEST-CASE per-step I(alpha), achieved when advice is chosen so
-    the advised action's effective probability p_k = 0.5 (maximizing the
-    Bernoulli-variance term p_k(1-p_k), which peaks at 0.25).
- 
-    I(alpha) = beta^2 * p_k(1-p_k) <= beta^2 * 0.25 always.
- 
-    Used as an optimistic forecast: "even with the best possible advice
-    choice from here on, how much alpha-information could each remaining
-    step contribute at most". Also note: this NAIVE ceiling upper-bounds the
-    true MARGINAL alpha information too (I_alpha_marginal <= I_alpha_naive
-    always, since I_alpha_marginal = I_alpha_naive - I_cross^2/I_beta), so
-    using it as a forecast errs toward NOT collapsing prematurely -- the
-    forecast is always at least as optimistic as reality, so if even this
-    optimistic ceiling says further steps won't help, that conclusion is safe.
+    Sum per-observation Fisher information contributions over a list of observations, evaluated
+    at the given point estimate (beta_hat, alpha_hat). Returns the total 2x2 FIM [[A, C], [C, B]]
     """
-    return (beta ** 2) * 0.25
+
+    total = np.zeros((2, 2))
+    for obs in observations: 
+        nominal_scores, advised_idx = observation_to_scores(obs, enabled_actions)
+        if advised_idx is None:
+            total += fisher_info_defer(nominal_scores, beta_hat)
+        else:
+            total += fisher_info_advice(nominal_scores, advised_idx, beta_hat, alpha_hat)
+
+    return total 
 
 
-def fisher_info_joint(nominal_scores, advised_idx, beta, alpha):
+def marginal_variances(fisher_matrix):
     """
-    Compute the full joint (beta, alpha) Fisher information for a single
-    observation, and the MARGINAL information for each parameter — i.e. the
-    honest information about beta accounting for alpha being unknown too
-    (and vice versa), via the standard 2x2 Cramer-Rao inverse.
- 
-    For DEFER (advised_idx=None): alpha terms are all 0/undefined, and the
-    marginal beta information exactly equals the naive value (no entanglement).
- 
-    Returns a dict with: I_beta_naive, I_alpha_naive, I_cross,
-    I_beta_marginal, I_alpha_marginal.
+    Extract marginal Var(beta) and Var(alpha) from the 
+    accumulaeted 2x2 FIM [[A, C], [C, B]] via the standard 2x2 inverse
+    Var(beta) = B / (A*B-C^2)
+    Var(alpha) = A / (A*B-C^2)
+
+    Returns (var_beta, var_alpha) or (inf, inf) if the matrix is 
+    singular or near-singular.
     """
-    scores = shift_scores(nominal_scores, advised_idx, alpha)
- 
-    I_beta = fisher_info_beta(scores, beta)
- 
-    if advised_idx is None:
-        return {
-            "I_beta_naive": I_beta,
-            "I_alpha_naive": 0.0,
-            "I_cross": 0.0,
-            "I_beta_marginal": I_beta,   # no entanglement under DEFER
-            "I_alpha_marginal": 0.0,     # DEFER carries no alpha information
-        }
- 
-    I_alpha = fisher_info_alpha(scores, advised_idx, beta)
-    I_cross = fisher_info_cross(scores, advised_idx, beta)
- 
-    det = I_beta * I_alpha - I_cross ** 2
-    # guard against numerical edge cases (e.g. I_alpha or I_beta ~ 0)
-    I_beta_marginal = det / I_alpha if I_alpha > 1e-12 else 0.0
-    I_alpha_marginal = det / I_beta if I_beta > 1e-12 else 0.0
- 
-    return {
-        "I_beta_naive": I_beta,
-        "I_alpha_naive": I_alpha,
-        "I_cross": I_cross,
-        "I_beta_marginal": I_beta_marginal,
-        "I_alpha_marginal": I_alpha_marginal,
-    }
+    A, C = fisher_matrix[0, 0], fisher_matrix[0, 1]
+    B = fisher_matrix[1, 1]
+    det = A*B - C**2
+    if det <= 0:
+        #print("Det of FIM is: ", det)
+        return np.inf, np.inf
+
+    var_beta = B/det 
+    var_alpha= A/det 
+    return var_beta, var_alpha

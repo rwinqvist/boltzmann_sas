@@ -107,7 +107,11 @@ class BoltzmannMDP():
 
     def get_successors(self, state, action):
         """
-            Get successor states and their likelihoods, based on the RESOLVED action choice. 
+            Get successor states and their likelihoods for PLANNING: `action`
+            here is unresolved ADVICE (including DEFER), and this marginalizes
+            over the operator's full Boltzmann-compliance distribution.
+            Do NOT call this with an already-resolved/executed action -- see
+            get_resolved_successors() for that case (used by step()).
         """
         if (state, action) in self.T: 
             return self.T[(state, action)]
@@ -204,6 +208,47 @@ class BoltzmannMDP():
         #self.R[(state, action, next_state)] = r
         return r 
     
+    def get_resolved_successors(self, state, resolved_action):
+        """
+            Get successor states for an ALREADY-RESOLVED (executed) action --
+            compliance has already been decided by resolve_domain_action_choice,
+            this just applies the domain's raw transition dynamics for that
+            concrete action. Deliberately separate from get_successors()/self.T,
+            which are for PLANNING and expect unresolved advice -- reusing them
+            here would silently re-marginalize an already-resolved action as if
+            it were fresh advice. Otherwise the VI generated policy is evaluated on 
+            different dynamics.
+        """
+        successors = {}
+        domain_state, joint_op_state = state
+        active_opidx, domain_action = resolved_action
+        active_operator = self.operators[active_opidx]
+        active_op_state = joint_op_state[active_opidx]
+
+        domain_transitions = active_operator.get_domain_transitions(domain_state, active_op_state, domain_action)
+ 
+        next_op_states = {}
+        for opidx in range(self.num_operators):
+            operator = self.operators[opidx]
+            op_state = joint_op_state[opidx]
+            is_active = operator == active_operator
+            next_op_states[opidx] = operator.get_operator_state_transitions(op_state, is_active, domain_action)
+ 
+        next_joint_op_states = list(itertools.product(*next_op_states.values()))
+
+        for next_domain_state, p_domain in domain_transitions.items():
+            for next_joint_op_state in next_joint_op_states:
+                next_state = (next_domain_state, next_joint_op_state)
+                p_op = 1
+                for opidx, next_op_state in enumerate(next_joint_op_state):
+                    p_op *= next_op_states[opidx][next_op_state]
+                p = p_domain * p_op
+                assert next_state in self.states, f"Next state: {next_state} not in state space"
+                successors[next_state] = p
+ 
+        return successors
+
+
     def step(self, state, issued_action, op_parametrizations: Optional[dict[int, OperatorParams]] = None):
         domain_state, joint_op_state = state 
         opidx, advice = issued_action
@@ -226,7 +271,8 @@ class BoltzmannMDP():
 
         executed_action = (opidx, executed_domain_action)
 
-        successors = self.get_successors(state, executed_action)
+        # resolved successors
+        successors = self.get_resolved_successors(state, executed_action)
         states = list(successors.keys())
         likelihoods = list(successors.values())
         next_state = random.choices(states, likelihoods, k=1)[0]

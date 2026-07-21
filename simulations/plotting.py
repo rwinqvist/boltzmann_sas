@@ -189,9 +189,19 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
     """
     true_beta = config["true_beta"]
     true_alpha = config["true_alpha"]
- 
+
     approaches = list(results_by_approach.keys())
-    n_rows = len(approaches)
+ 
+    # Not every approach has belief data to plot (e.g. VI plans from a fixed
+    # point estimate -- there's no belief to track at all). Row 0 (reward /
+    # action-rate) still includes every approach, but the belief-heatmap rows
+    # below it are only built for approaches that actually have a "belief" key
+    # in their results -- this is what determines how many rows the figure needs.
+    belief_approaches = [
+        a for a in approaches
+        if results_by_approach[a] and belief_key in results_by_approach[a][0]
+    ]
+    n_rows = len(belief_approaches)
  
     default_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     if colors is None:
@@ -232,7 +242,7 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
  
  
     # --- rows 1..n: per-approach belief heatmaps ---
-    for i, approach in enumerate(approaches):
+    for i, approach in enumerate(belief_approaches):
         results_list = results_by_approach[approach]
         label = approach.value if hasattr(approach, "value") else approach
  

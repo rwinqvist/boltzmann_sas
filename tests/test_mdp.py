@@ -8,6 +8,7 @@ from simulations.utils import get_results_path, get_operators
 from simulations.scoring_functions import generate_scoring_function
 from simulations.domain_transitions import build_auto_domain_transitions
 from simulations.runners import run_standard_vi
+from algorithms.value_iteration import value_iteration
 
 
 
@@ -19,7 +20,7 @@ def main():
     num_actions = 3
     true_beta = 0.5
     true_alpha = 1
-    num_sims = 1
+    num_sims = 20
 
     # n_jobs=-1 uses all available cores. Drop to e.g. os.cpu_count() - 1
     # if you want to keep a core free while these run in the background.
@@ -34,7 +35,7 @@ def main():
         fn_app ="test"
         print("WARNING! NOT SAVING RESULTS!")
     if is_toy:
-        print("WARNING! You're saying under TOY")
+        print("WARNING! You're saving under TOY")
     if manual_debug:
         print("WARNING! Debug mode on")
         fn_app = "debug"
@@ -68,7 +69,7 @@ def main():
         cost_nominals=cost_nominals,       # only takes effect once you apply the from_context fix above
     )
 
-    auto_op_contexts = []
+    auto_op_contexts = [auto_context]
 
     # generate nominal human scoring function 
     Phi_nom = generate_scoring_function(domain, seed=SEED)
@@ -84,12 +85,10 @@ def main():
         nom_scoring=Phi_nom,
     )
 
-    operator_contexts = [bhuman1] + list(auto_op_contexts)
+    operator_contexts = [bhuman1]
 
-    run_standard_vi(config=config, domain=domain, Phi_nom=Phi_nom, true_beta=true_beta, true_alpha=true_alpha,
-                    cost_nominals=cost_nominals, seed=SEED, num_sims=num_sims, auto_op_contexts=auto_op_contexts, is_toy=is_toy,
-                    fn_app=fn_app, save_results=save_results, n_jobs=n_jobs)
-
+    mdp = build_sas(domain, operator_contexts, model_type=MDP)
+    Q, V, policy = value_iteration(model=mdp)
     
 
 

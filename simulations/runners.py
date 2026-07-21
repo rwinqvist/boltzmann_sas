@@ -11,37 +11,16 @@ from operators.utils import OperatorParams, OperatorType
 from boltzmann_sas.boltzmann_bamdp import BoltzmannBAMDP
 from boltzmann_sas.boltzmann_mdp import BoltzmannMDP
 from boltzmann_sas.globals import DEFER, MDP, BAMDP
-from bamcp.bamcp import BAMCPSolver
+from bamcp.bamcp import BAMCPSolver, EarlyStoppingBAMCPSolver
 from bamcp.history import History
+from bamcp.utils import unpack_action
 from algorithms.value_iteration import value_iteration
 from belief.belief import FreqBelief, JointGridBelief
-from belief.collapse_monitor import AlphaCollapseMonitor
 from belief.observation import Observation
 from simulations.approach import Approach
-from simulations.utils import get_results_path, get_operators, get_vi_policy_path
+from simulations.utils import get_results_path, get_operators, get_vi_policy_path, load_all_sims
 
 MAX_DEPTH = 50
-
-
-def unpack_action(bamdp, action):
-    """
-    NOTE: this duplicates BAMCPSolver.unpack_action (algorithms/bamcp.py) but operates
-    on a raw BoltzmannBAMDP instance rather than a solver. Check whether this standalone
-    version is still called anywhere, or whether it's a leftover from before
-    BAMCPSolver.unpack_action existed.
-    """
-    is_defer, is_advice, is_auto = 0, 0, 0
-
-    opidx, advice = action
-    if opidx not in bamdp.boltzmann_operator_indices:
-        is_auto = 1
-    else:
-        if advice == DEFER:
-            is_defer = 1
-        else:
-            is_advice = 1
-
-    return is_advice, is_defer, is_auto
 
 
 def build_sas(domain, operator_contexts, model_type):
@@ -118,174 +97,27 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
         )
         for sim in range(num_sims)
     )
+    
+    print("remove this exit!!!")
+    exit()
 
-
-# ============================================================
-# BAMCP with alpha-collapse monitor
-#    - Identical to standard BAMCP, except: after every belief update, checks
-#      whether the AlphaCollapseMonitor says alpha is no longer identifiable
-#      from here (given a pessimistic beta estimate), and if so, freezes
-#      alpha's belief and lets planning continue with a reduced belief space.
-#    - Written as an explicit step loop (not delegating to solver.run())
-#      because we need a hook after every belief update to check the monitor.
-# ============================================================
-
-def _run_collapse_aware_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, config, true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results, collapse_kwargs):
-    """ Runs a single alpha-collapse-aware BAMCP simulation. Top-level (pickable) for joblib/loky """
-    sim_seed = seed * 10_000 + sim 
-    random.seed(sim_seed)
-    np.random.seed(sim_seed)
-
-    print(f"Sim: {sim + 1}")
-    fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
-        num_autos=len(auto_op_contexts), approach=Approach.BAMCP_ALPHA_COLLAPSE,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy,
-        fn_app=fn_app, grid_tag=grid_tag, config=config,
-    )
-    if os.path.exists(fn):
-        print("Results already exist!")
-        return
-
-    bamdp = build_sas(domain, operator_contexts, model_type=BAMDP)
-    solver = BAMCPSolver(bamdp, max_depth=config["max_depth"])
-    monitor = AlphaCollapseMonitor(**(collapse_kwargs or {}))
-
-    state = bamdp.s0
-    history = History(items=(state,))
-    total_reward = 0
-    total_steps = 0
-    is_defer_vec, is_advice_vec, is_auto_vec = [], [], []
-    belief_vec, belief_stats, rewards, cum_rewards = [], [], [], []
-    followed_advice = []
-    n_advice_so_far = 0
-    collapse_step_record = None   # real step index at which collapse happened, for later analysis
-    max_steps = config.get("max_steps", np.inf)
-
-    start = time.perf_counter()
-    while not bamdp.is_goal(state) and not bamdp.is_terminal(state) and total_steps < max_steps:
-        issued_action = solver.get_next_action(history)
-        is_advice, is_defer, is_auto = solver.unpack_action(issued_action)
-        is_advice_vec.append(is_advice)
-        is_defer_vec.append(is_defer)
-        is_auto_vec.append(is_auto)
- 
-        next_state, reward, executed_action = bamdp.step(state, issued_action)
- 
-        if issued_action[1] != DEFER and executed_action[1] == issued_action[1]:
-            followed_advice.append(1)
-        else:
-            followed_advice.append(0)
- 
-        rewards.append(reward)
- 
-        opidx, executed_domain_action = executed_action
-        operator = bamdp.operators[opidx]
-        _, issued_domain_action = issued_action
-        domain_state, joint_op_state = state
-        op_state = joint_op_state[opidx]
- 
-        obs = Observation(
-            domain_state=domain_state, op_state=op_state, operator=operator,
-            executed_domain_action=executed_domain_action, issued_domain_action=issued_domain_action,
-        )
-        bamdp.update_belief(obs)
- 
-        if is_advice:
-            n_advice_so_far += 1
-
-        # NOTE: bamdp.belief is keyed by boltzmann_operator_indices[operator],
-        # NOT by the action's opidx (which indexes the full operator list,
-        # including any autonomous operators) -- these are different indices.
-        if not monitor.collapsed and operator in bamdp.boltzmann_operators:
-            bidx = bamdp.boltzmann_operator_indices[operator]
-            belief = bamdp.belief[bidx]
-            n_remaining = max_steps - total_steps - 1 if np.isfinite(max_steps) else domain.depth - total_steps - 1
-            triggered = monitor.check(belief, n_advice_so_far, n_remaining)
-            if triggered:
-                belief.freeze_alpha(monitor.collapse_value)
-                collapse_step_record = total_steps + 1
-                print(f"Sim {sim+1}: alpha collapsed at step {collapse_step_record} "
-                      f"(n_advice={n_advice_so_far}), frozen alpha={monitor.collapse_value}")
-
-        
-        belief_vec.append(bamdp.get_belief())
-        belief_stats.append(bamdp.get_belief_stats())
- 
-        history = history.add_entry(issued_action, executed_action, next_state)
-        state = next_state
-        total_reward += reward
-        total_steps += 1
-        cum_rewards.append(total_reward)
-
-    total_time = time.perf_counter() - start
-     
-    results = {
-        "cum_rewards": cum_rewards,
-        "rewards": rewards,
-        "total_reward": total_reward,
-        "total_steps": total_steps,
-        "is_defer": is_defer_vec,
-        "is_advice": is_advice_vec,
-        "is_auto": is_auto_vec,
-        "belief": belief_vec,
-        "belief_stats": belief_stats,
-        "history": history,
-        "followed_advice": followed_advice,
-        "total_time": total_time,
-        "config": config,
-        "alpha_collapse_step": collapse_step_record,
-        "alpha_collapse_value": monitor.collapse_value,
-    }
-
-    if save_results:
-        joblib.dump(results, fn)
-
-    collapse_msg = f"collapsed at step {collapse_step_record}" if collapse_step_record else "never collapsed"
-    print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f}, alpha {collapse_msg})")
- 
-
-def run_collapse_aware_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                              auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="",
-                              save_results=True, n_jobs=-1, collapse_kwargs=None):
-    """
-    :param collapse_kwargs: dict of kwargs passed to AlphaCollapseMonitor, e.g.
-        {"min_advice_obs": 15, "check_every": 10, "tolerance": 0.05,
-         "confidence": 0.1, "required_consecutive": 2}. Defaults used if None.
-    """
-    print("\nApproach: BAMCP with alpha-collapse")
-
-    init_belief = JointGridBelief.uniform(beta_values=beta_grid, alpha_values=alpha_grid)
- 
-    bhuman1 = OperatorContext(
-        category=OperatorType.BHUMAN,
-        n=1,
-        actions=domain.actions,
-        enabled_actions=domain.enabled_actions,
-        domain_transitions=domain.T_det,
-        cost_nominals=cost_nominals,
-        params=OperatorParams(beta=true_beta, alpha=true_alpha),
-        init_belief=init_belief,
-        nom_scoring=Phi_nom,
+    all_results = load_all_sims(
+        domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.BAMCP,
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
+        num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
     )
 
-    operator_contexts = [bhuman1] + list(auto_op_contexts)
- 
-    Parallel(n_jobs=n_jobs, backend="loky")(
-        delayed(_run_collapse_aware_bamcp_one_sim)(
-            sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results, collapse_kwargs,
-        )
-        for sim in range(num_sims)
-    )
+    return all_results
+
+
 
 # ============================================================
-# Naive (frequentist) warm-start
+# Early-stopping BAMCP
 # ============================================================
 
-def _run_naive_freq_warmstart_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                                  true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, save_results):
-    """ Runs a single naive-warmstart simulation. Top-level (picklable) for joblib/loky. """
+def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
+                            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results):
+    """ Runs a single standard-BAMCP simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
     np.random.seed(sim_seed)
@@ -293,170 +125,28 @@ def _run_naive_freq_warmstart_one_sim(sim, domain, operator_contexts, auto_op_co
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
-        num_autos=len(auto_op_contexts), approach=Approach.NAIVE_FREQ_WARMSTART, config=config, n_warmstart=n_warmstart,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app,
+        num_autos=len(auto_op_contexts), approach=Approach.BAMCP_ES,
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
     if os.path.exists(fn):
         print("Results already exist!")
         return
 
     bamdp = build_sas(domain, operator_contexts, model_type=BAMDP)
-    state = bamdp.s0
-    history = History(items=(state,))
-    total_reward = 0
-    total_steps = 0
-    is_defer_vec, is_advice_vec, is_auto_vec = [], [], []
-    belief_vec, belief_stats, rewards, cum_rewards = [], [], [], []
-    is_advice = is_auto = 0
-    is_defer = 1
-
-    defer_action = (0, DEFER)
+    solver = EarlyStoppingBAMCPSolver(bamdp, max_depth=config["max_depth"])
     start = time.perf_counter()
-    for _ in range(n_warmstart):
-        next_state, reward, executed_action = bamdp.step(state, defer_action)
-        obs = Observation(
-            domain_state=state[0], op_state=state[1][0], operator=bamdp.boltzmann_operators[0],
-            executed_domain_action=executed_action[1], issued_domain_action=DEFER,
-        )
-        is_advice_vec.append(is_advice)
-        is_defer_vec.append(is_defer)
-        is_auto_vec.append(is_auto)
-        rewards.append(reward)
-
-        bamdp.update_belief(obs)
-        belief_vec.append(bamdp.get_belief())
-        belief_stats.append(bamdp.get_belief_stats())
-
-        history = history.add_entry(defer_action, executed_action, next_state)
-        state = next_state
-        total_reward += reward
-        total_steps += 1
-        cum_rewards.append(total_reward)
-
-    bamcp = BAMCPSolver(bamdp, max_depth=config["max_depth"])
-    results = bamcp.run(
-        s0=state, total_reward=total_reward, total_steps=total_steps, is_defer_vec=is_defer_vec,
-        is_advice_vec=is_advice_vec, is_auto_vec=is_auto_vec, belief_vec=belief_vec, belief_stats=belief_stats,
-        rewards=rewards, cum_rewards=cum_rewards,
-    )
+    results = solver.run()
     total_time = time.perf_counter() - start
-
     results["total_time"] = total_time
-    results["history"] = History(items=history.items + results["history"].items[1:])
     results["config"] = config
-
     if save_results:
         joblib.dump(results, fn)
     print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f})")
 
 
-
-def run_naive_freq_warmstart(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                         n_warmstart, auto_op_contexts, alpha_grid, is_toy=False, fn_app="", save_results=True, n_jobs=-1):
-    print("\nApproach: Naive warmstart")
-    bhuman1 = OperatorContext(
-        category=OperatorType.BHUMAN,
-        n=1,
-        actions=domain.actions,
-        enabled_actions=domain.enabled_actions,
-        domain_transitions=domain.T_det,
-        cost_nominals=cost_nominals,
-        params=OperatorParams(beta=true_beta, alpha=true_alpha),
-        init_belief=FreqBelief.uniform(alpha_values=alpha_grid),
-        nom_scoring=Phi_nom,
-    )
-
-    config["n_warmstart"] = n_warmstart
-
-    operator_contexts = [bhuman1] + list(auto_op_contexts)
-
-    Parallel(n_jobs=n_jobs, backend="loky")(
-        delayed(_run_naive_freq_warmstart_one_sim)(
-            sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, save_results,
-        )
-        for sim in range(num_sims)
-    )
-
-
-# ============================================================
-# Bayesian warm-start
-# ============================================================
-
-def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                                     true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, grid_tag, save_results):
-    """ Runs a single Bayesian-warmstart simulation. Top-level (picklable) for joblib/loky. """
-    sim_seed = seed * 10_000 + sim
-    random.seed(sim_seed)
-    np.random.seed(sim_seed)
-
-    print(f"Sim: {sim + 1}")
-    fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
-        num_autos=len(auto_op_contexts), approach=Approach.NAIVE_BAYESIAN_WARMSTART, config=config, n_warmstart=n_warmstart,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
-    )
-    if os.path.exists(fn):
-        print("Results already exist!")
-        return
-
-    bamdp = build_sas(domain, operator_contexts, model_type=BAMDP)
-    state = bamdp.s0
-    history = History(items=(state,))
-    total_reward = 0
-    total_steps = 0
-    is_defer_vec, is_advice_vec, is_auto_vec = [], [], []
-    belief_vec, belief_stats, rewards, cum_rewards = [], [], [], []
-    is_advice = is_auto = 0
-    is_defer = 1
-
-    belief_vec.append(bamdp.get_belief())
-    belief_stats.append(bamdp.get_belief_stats())
-
-    defer_action = (0, DEFER)
-    start = time.perf_counter()
-    for _ in range(n_warmstart):
-        next_state, reward, executed_action = bamdp.step(state, defer_action)
-        obs = Observation(
-            domain_state=state[0], op_state=state[1][0], operator=bamdp.boltzmann_operators[0],
-            executed_domain_action=executed_action[1], issued_domain_action=DEFER,
-        )
-        is_advice_vec.append(is_advice)
-        is_defer_vec.append(is_defer)
-        is_auto_vec.append(is_auto)
-        rewards.append(reward)
-
-        bamdp.update_belief(obs)
-        belief_vec.append(bamdp.get_belief())
-        belief_stats.append(bamdp.get_belief_stats())
-
-        history = history.add_entry(defer_action, executed_action, next_state)
-        state = next_state
-        total_reward += reward
-        total_steps += 1
-        cum_rewards.append(total_reward)
-
-    bamcp = BAMCPSolver(bamdp, max_depth=config["max_depth"])
-    results = bamcp.run(
-        s0=state, total_reward=total_reward, total_steps=total_steps, is_defer_vec=is_defer_vec,
-        is_advice_vec=is_advice_vec, is_auto_vec=is_auto_vec, belief_vec=belief_vec, belief_stats=belief_stats,
-        rewards=rewards, cum_rewards=cum_rewards,
-    )
-    total_time = time.perf_counter() - start
-
-    results["total_time"] = total_time
-    results["history"] = History(items=history.items + results["history"].items[1:])
-    results["config"] = config
-
-    if save_results:
-        joblib.dump(results, fn)
-    print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f})")
-
-
-def run_bayesian_naive_warmstart(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                                  n_warmstart, auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="",
-                                  save_results=True, n_jobs=-1, debug=False):
-    print("\nApproach: Bayesian naive warmstart")
+def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False):
+    print("\nApproach: Standard BAMCP")
 
     if debug: 
         n = len(beta_grid) * len(alpha_grid)
@@ -478,23 +168,31 @@ def run_bayesian_naive_warmstart(config, domain, Phi_nom, true_beta, true_alpha,
         nom_scoring=Phi_nom,
     )
 
-    config["n_warmstart"] = n_warmstart
-
     operator_contexts = [bhuman1] + list(auto_op_contexts)
 
     Parallel(n_jobs=n_jobs, backend="loky")(
-        delayed(_run_bayesian_warmstart_one_sim)(
+        delayed(_run_early_stopping_bamcp_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, n_warmstart, is_toy, fn_app, grid_tag, save_results,
+            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results,
         )
         for sim in range(num_sims)
     )
 
+    all_results = load_all_sims(
+        domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.BAMCP_ES,
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
+        num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
+    )
+
+    return all_results
+
+
+
 
 
 # ------- Standard VI --------- # 
-def _run_std_vi_one_sim(sim, domain, policy, operator_contexts, auto_op_contexts, config,
-                        true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results):
+def _run_std_vi_one_sim(sim, domain, mdp:BoltzmannMDP, policy_data, auto_op_contexts, config,
+                        true_beta, true_alpha, planning_beta, planning_alpha, seed, is_toy, fn_app, save_results):
     """ Runs a single Bayesian-warmstart simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
@@ -504,19 +202,65 @@ def _run_std_vi_one_sim(sim, domain, policy, operator_contexts, auto_op_contexts
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.VI,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
+        true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, config=config
     )
 
     if os.path.exists(fn):
         print("Results already exist!")
-        return
+        return 
+
+    # simulate policy
+    
+    results = policy_data.copy()
+    policy = policy_data["policy"]
+    state = mdp.s0 
+    total_reward = 0
+    total_steps = 0 
+    rewards = []
+    cum_rewards = []
+    is_defer_vec, is_advice_vec, is_auto_vec = [], [], [] 
+    followed_advice = []
     
 
-    
+    while not mdp.is_terminal(state) and not mdp.is_goal(state):
+        issued_action = policy[state]
+
+        is_advice, is_defer, is_auto = unpack_action(mdp, issued_action)
+        is_advice_vec.append(is_advice)
+        is_defer_vec.append(is_defer)
+        is_auto_vec.append(is_auto)
+ 
+        next_state, reward, executed_action = mdp.step(
+            state, issued_action,
+            op_parametrizations={0: OperatorParams(beta=true_beta, alpha=true_alpha)},
+        )
+
+        if issued_action[1] != DEFER and executed_action[1] == issued_action[1]:
+            followed_advice.append(1)
+        else:
+            followed_advice.append(0)
+ 
+        state = next_state
+        total_reward += reward 
+        total_steps += total_steps
+        rewards.append(reward)
+        cum_rewards.append(total_reward)
+
+    results["cum_rewards"] = cum_rewards
+    results["rewards"] = rewards
+    results["total_reward"] = total_reward
+    results["total_steps"] = total_steps
+    results["is_defer"] = is_defer_vec 
+    results["is_advice"] = is_advice_vec 
+    results["is_auto"] = is_auto_vec
+    results["followed_advice"] = followed_advice
+
+    if save_results:
+        joblib.dump(results, fn)
 
 
 
-def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
+def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, planning_beta, planning_alpha, cost_nominals, seed, num_sims,
                         auto_op_contexts, is_toy=False, fn_app="", save_results=True, n_jobs=-1, debug=False):
     print("\nApproach: Standard VI")
 
@@ -527,42 +271,40 @@ def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, cost_nominal
         enabled_actions=domain.enabled_actions,
         domain_transitions=domain.T_det,
         cost_nominals=cost_nominals,
-        params=OperatorParams(beta=true_beta, alpha=true_alpha),
+        params=OperatorParams(beta=planning_beta, alpha=planning_alpha),
         nom_scoring=Phi_nom,
     )
 
     operator_contexts = [bhuman1] + list(auto_op_contexts)
-    results = {}
-    
+
     mdp = build_sas(domain, operator_contexts, model_type=MDP)
     policy_fn = get_vi_policy_path(domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1, num_autos=len(auto_op_contexts), 
-                                   true_beta=true_beta, true_alpha=true_alpha, seed=seed, is_toy=is_toy, fn_app=fn_app)
+                                   true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, is_toy=is_toy, fn_app=fn_app)
     
     if os.path.exists(policy_fn):
         print("Policy already exists. Loading it from file")
-        data = joblib.load(policy_fn)
-        policy = data["policy"]
-        total_time = data["total_time"]
-    
+        policy_data = joblib.load(policy_fn)
     else:
-        results = {}
+        policy_data = {}
         start = time.perf_counter()
         Q, V, policy = value_iteration(model=mdp)
         total_time = time.perf_counter() - start 
-        results["Q"] = Q 
-        results["V"] = V
-        results["policy"] = policy 
-        results["total_time"] = total_time
+        policy_data["Q"] = Q 
+        policy_data["V"] = V
+        policy_data["policy"] = policy 
+        policy_data["total_time"] = total_time
         print(f"VI done in {total_time:.1f}s")
-        joblib.dump(results, policy_fn)
-    
-    exit()
+        joblib.dump(policy_data, policy_fn)
     
     Parallel(n_jobs=n_jobs, backend="loky")(
-        delayed(_run_std_vi_one_sim)(
-            sim, domain, policy, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, save_results,
-        )
+        delayed(_run_std_vi_one_sim)(sim, domain=domain, mdp=mdp, policy_data=policy_data, auto_op_contexts=auto_op_contexts, config=config,
+                        true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, is_toy=is_toy, fn_app=fn_app, save_results=save_results)
         for sim in range(num_sims)
     )
+
+    all_results = load_all_sims(domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.VI,
+                                true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, num_sims=num_sims,
+                                num_autos=len(auto_op_contexts), config=config, is_toy=is_toy, fn_app=fn_app)
+    
+    return all_results
 

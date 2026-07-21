@@ -2,14 +2,18 @@ import numpy as np
 import datetime as dt
 import math
 import random
+import time
 from typing import Optional
 from boltzmann_sas.boltzmann_bamdp import BoltzmannBAMDP
 from boltzmann_sas.globals import DEFER
 from operators.utils import OperatorParams
 from bamcp.history import History
 from bamcp.objective import Objective
+from bamcp.utils import unpack_action
 from bamcp.rollout_policies import random_rollout
 from belief.observation import Observation
+from belief.fisher_info import accumulate_fisher_info, marginal_variances
+from algorithms.value_iteration import value_iteration
 
 MIN_BIAS = 1
 
@@ -434,21 +438,6 @@ class BAMCPSolver():
     def update_belief(self, hist_data:Observation):
         """ Update BAMDP belief. """
         self.bamdp.update_belief(hist_data)
-
-
-    def unpack_action(self, action): 
-        is_defer, is_advice, is_auto = 0, 0, 0
-
-        opidx, advice = action 
-        if not opidx in self.bamdp.boltzmann_operator_indices.values():
-            is_auto = 1         
-        else: 
-            if advice == DEFER:
-                is_defer = 1 
-            else: 
-                is_advice = 1
-
-        return is_advice, is_defer, is_auto
     
 
     def get_belief(self):
@@ -456,6 +445,9 @@ class BAMCPSolver():
     
     def get_belief_stats(self):
         return self.bamdp.get_belief_stats()
+    
+    def get_params_est(self):
+        return self.bamdp.get_params_est()
 
 
     def run(self, s0=None, total_reward=0, total_steps=0, is_defer_vec=None, is_advice_vec=None, is_auto_vec=None, belief_vec=None, belief_stats=None, rewards=None, cum_rewards=None, max_steps=np.inf):
@@ -485,7 +477,7 @@ class BAMCPSolver():
             #print("current state: ", history.last_state)
             
             issued_action = self.get_next_action(history)
-            is_advice, is_defer, is_auto = self.unpack_action(issued_action)
+            is_advice, is_defer, is_auto = unpack_action(self.bamdp, issued_action)
             is_advice_vec.append(is_advice)
             is_defer_vec.append(is_defer)
             is_auto_vec.append(is_auto)
@@ -513,7 +505,7 @@ class BAMCPSolver():
             op_state = joint_op_state[opidx]
 
             hist_data = Observation(domain_state=domain_state, op_state=op_state, operator=operator, executed_domain_action=executed_domain_action, issued_domain_action=issued_domain_action)
-            
+
             true_params = self.bamdp.operators[0].params
             enabled_actions = self.bamdp.domain.enabled_actions[state[0]]
             Phi_nom = self.bamdp.operators[0].nom_scoring
@@ -566,6 +558,314 @@ class BAMCPSolver():
         }
 
         return results
+    
+
+class EarlyStoppingBAMCPSolver(BAMCPSolver):
+    def __init__(self, bamdp:BoltzmannBAMDP, max_depth, t=2000, num_trials=0, objective:Objective=None, max_entropy_rollout=False):
+        super().__init__(bamdp=bamdp, max_depth=max_depth, t=t, num_trials=num_trials, objective=objective, max_entropy_rollout=max_entropy_rollout)
+
+        self.bamdp = bamdp 
+        self.max_depth = max_depth 
+        self.t = t 
+        self.num_trials = num_trials 
+        self.objective = objective
+        self.max_entropy_rollout = max_entropy_rollout
+
+        self.bamcp = self.generate_bamcp()
+        self.bamcp_policy = self.get_next_action 
+
+    def is_stalled(self, var_history, window=20, rel_threshold=0.05):
+        """
+        True if the (regression-fit) relative change in var_history over 
+        the last 'window' points is small in magnitude - i.e, neither shrinking
+        nor growing much. abs() is deliberate: growth and stagnation both 
+        mean "not converging usefully", and shouldn't be treated differentely here. 
+        """
+        if len(var_history) <= window: 
+            return False 
+        segment = np.array(var_history[-window:], dtype="float")
+        if not np.all(np.isfinite(segment)) or np.any(segment <= 0):
+            return False 
+        x = np.arange(window)
+        slope, intercept = np.polyfit(x, segment, 1)
+        if intercept <= 0:
+            return False 
+        predicted_change = -slope*window/intercept 
+        return abs(predicted_change) < rel_threshold
+    
+    def check_stopping_criterion(self, acc_fisher_information, window=20, rel_threshold=0.05):
+        """
+        Trend-based stopping check. NOT derived from the theorems. Window
+        and rel_threshold are heuristic tuning knobs, that we calibrate 
+        empirically. The theorems only guarantee *that* Var stops shrinking near
+        the boundaries, not by how much or over what horizon.
+
+        Returns (stopped: bool, trigger_param: str or None)
+        """
+        
+        var_beta_history = [entry["var_beta"] for entry in acc_fisher_information]
+        var_alpha_history = [entry["var_alpha"] for entry in acc_fisher_information]
+
+        trace_history = [ vb + va if np.isfinite(vb) and np.isfinite(va) else np.inf 
+                         for vb, va in zip(var_beta_history, var_alpha_history)]
+        
+        stopped = self.is_stalled(trace_history, window, rel_threshold)
+
+        final_var_beta = var_beta_history[-1] if var_beta_history else np.inf 
+        final_var_alpha = var_alpha_history[-1] if var_alpha_history else np.inf 
+
+        trigger_param = None 
+        if stopped: 
+            trigger_param = "beta" if final_var_beta >= final_var_alpha else "alpha"
+
+        return stopped, trigger_param, final_var_beta, final_var_alpha
+    
+        # def is_stalled(var_history):
+        #     current, past = var_history[-1], var_history[-1-window]
+        #     if not (np.isfinite(current) and np.isfinite(past)) or past <= 0:
+        #         return False # still in the not-yet-identifiable phase 
+        #     rel_drop = (past-current)/past 
+        #     return rel_drop < rel_threshold
+        
+        # beta_stalled = is_stalled(var_beta_history)
+        # alpha_stalled = is_stalled(var_alpha_history)
+
+        # if beta_stalled and alpha_stalled:
+        #     return True, "both"
+        # elif beta_stalled: 
+        #     return True, "beta"
+        # elif alpha_stalled:
+        #     return True, "alpha"
+        return False, None
+
+
+    def run_bamcp(self, s0=None, total_reward=0, total_steps=0, is_defer_vec=None, is_advice_vec=None, is_auto_vec=None, belief_vec=None, belief_stats=None, rewards=None, cum_rewards=None, max_steps=np.inf):
+        state = s0 if s0 is not None else self.bamdp.s0 
+        history = History(items=(state,))
+        total_reward = total_reward 
+        total_steps = total_steps
+        is_defer_vec   = is_defer_vec   if is_defer_vec   is not None else []
+        is_advice_vec  = is_advice_vec  if is_advice_vec  is not None else []
+        is_auto_vec    = is_auto_vec    if is_auto_vec    is not None else []
+        belief_vec     = belief_vec     if belief_vec     is not None else []
+        belief_stats   = belief_stats   if belief_stats   is not None else []
+        rewards        = rewards        if rewards        is not None else []
+        cum_rewards    = cum_rewards    if cum_rewards    is not None else []
+        followed_advice = [] 
+        observations = {}
+        fisher_accumulator = {}  
+        stop_info = {"stopped_early": False, "stop_step": None, "trigger_param": None}
+
+        # initial belief stats
+        if len(belief_stats) == 0:
+            belief_stats.append(self.get_belief_stats())
+
+        stopped = False
+
+        while not self.bamdp.is_goal(state) and not self.bamdp.is_terminal(state) and total_steps < max_steps and not stopped:
+            # plan 
+            #print("current state: ", history.last_state)
+        
+            issued_action = self.get_next_action(history)
+            is_advice, is_defer, is_auto = unpack_action(self.bamdp, issued_action)
+            is_advice_vec.append(is_advice)
+            is_defer_vec.append(is_defer)
+            is_auto_vec.append(is_auto)
+
+            #print("next issued action: ", issued_action)
+
+            # execute in real environment
+            next_state, reward, executed_action = self.bamdp.step(state, issued_action)
+            #print("executed action: ", executed_action)
+            #print("reward: ", reward)
+
+            if issued_action[1] != DEFER and executed_action[1] == issued_action[1]:
+                followed_advice.append(1)
+            else:
+                followed_advice.append(0)
+
+            rewards.append(reward)
+
+            # update belief based on what we observed 
+            opidx, executed_domain_action = executed_action
+            operator = self.bamdp.operators[opidx]
+            _, issued_domain_action = issued_action
+
+            domain_state, joint_op_state = state 
+            op_state = joint_op_state[opidx]
+
+            hist_data = Observation(domain_state=domain_state, op_state=op_state, operator=operator, executed_domain_action=executed_domain_action, issued_domain_action=issued_domain_action)
+
+            #print("Updating belief...")
+            
+            if operator in self.bamdp.boltzmann_operators:
+                if opidx not in observations: 
+                    observations[opidx] = []
+
+                observations[opidx].append(hist_data)  # save observation
+                self.update_belief(hist_data)
+
+                # update accumulated Fisher information (only works for one boltzmann operator atm)
+                params_ests = self.get_params_est()[opidx]
+                beta_hat, alpha_hat = params_ests.beta, params_ests.alpha
+                fisher_info = accumulate_fisher_info(observations[opidx], beta_hat, alpha_hat, enabled_actions=operator.enabled_actions)
+                var_beta, var_alpha = marginal_variances(fisher_info)
+                
+                if opidx not in fisher_accumulator:
+                    fisher_accumulator[opidx] = []
+
+                fisher_accumulator[opidx].append({
+                    "matrix": fisher_info,
+                    "var_beta": var_beta, 
+                    "var_alpha": var_alpha
+                })
+
+                stopped, trigger_param, final_var_beta, final_var_alpha = self.check_stopping_criterion(acc_fisher_information=fisher_accumulator[opidx])
+
+                stop_info = {
+                        "stopped_early": stopped,
+                        "stop_step": total_steps+1,          # step count at moment of stopping
+                        "trigger_param": trigger_param,   # e.g. "beta" or "alpha", once criterion exists
+                        "final_var_beta": final_var_beta,
+                        "final_var_alpha": final_var_alpha
+                    }
+                
+            belief_vec.append(self.get_belief())
+            belief_stats.append(self.get_belief_stats())
+            
+            #print("New belief stats: ", self.get_belief_stats())
+            #input("Next...\n")
+
+            history = history.add_entry(issued_action, executed_action, next_state)
+            state = next_state 
+            total_reward += reward 
+            total_steps += 1 
+            cum_rewards.append(total_reward)
+
+        current_state = state 
+
+        results = {
+            "cum_rewards": cum_rewards,
+            "rewards": rewards,
+            "total_reward": total_reward,
+            "total_steps": total_steps, 
+            "is_defer": is_defer_vec, 
+            "is_advice": is_advice_vec, 
+            "is_auto": is_auto_vec, 
+            "belief": belief_vec,
+            "belief_stats": belief_stats,
+            "history": history,
+            "followed_advice": followed_advice,
+            "stop_info": stop_info
+        }
+
+        return results, current_state, stopped
+    
+
+    def sim_offline_policy(self, mdp, policy, bamcp_results, s0):
+        results = bamcp_results.copy()
+        cum_rewards = results["cum_rewards"]
+        rewards = results["rewards"]
+        total_reward = results["total_reward"]
+        total_steps = results["total_steps"]
+        is_defer_vec = results["is_defer"] 
+        is_advice_vec = results["is_advice"]
+        is_auto_vec = results["is_auto"] 
+        belief_vec = results["belief"]
+        belief_stats = results["belief_stats"]
+        history = results["history"]
+        followed_advice = results["followed_advice"]
+
+        state = s0 
+        
+        while not self.bamdp.is_goal(state) and not self.bamdp.is_terminal(state):
+            issued_action = policy[state]
+
+            is_advice, is_defer, is_auto = unpack_action(mdp, issued_action)
+            is_advice_vec.append(is_advice)
+            is_defer_vec.append(is_defer)
+            is_auto_vec.append(is_auto)
+    
+            next_state, reward, executed_action = mdp.step(state, issued_action)
+
+            if issued_action[1] != DEFER and executed_action[1] == issued_action[1]:
+                followed_advice.append(1)
+            else:
+                followed_advice.append(0)
+
+            
+            # pad belief and history 
+            belief_vec.append(belief_vec[-1])
+            belief_stats.append(belief_stats[-1])
+            history = history.add_entry(history.parent_history)
+    
+            state = next_state
+            total_reward += reward 
+            total_steps += total_steps
+            rewards.append(reward)
+            cum_rewards.append(total_reward)
+
+        results["cum_rewards"] = cum_rewards
+        results["rewards"] = rewards
+        results["total_reward"] = total_reward
+        results["total_steps"] = total_steps
+        results["is_defer"] = is_defer_vec 
+        results["is_advice"] = is_advice_vec 
+        results["is_auto"] = is_auto_vec
+        results["followed_advice"] = followed_advice
+
+        return results
+
+
+    def run(self, s0=None, total_reward=0, total_steps=0, is_defer_vec=None, is_advice_vec=None, is_auto_vec=None, belief_vec=None, belief_stats=None, rewards=None, cum_rewards=None, max_steps=np.inf):
+        
+        bamcp_results, current_state, stopped_early = self.run_bamcp(s0=s0,
+                                       total_reward=total_reward,
+                                       total_steps=total_steps,
+                                       is_defer_vec=is_defer_vec,
+                                       is_advice_vec=is_advice_vec,
+                                       is_auto_vec=is_auto_vec,
+                                       belief_vec=belief_vec,
+                                       belief_stats=belief_stats,
+                                       rewards=rewards,
+                                       cum_rewards=cum_rewards,
+                                       max_steps=max_steps)
+        
+        results = bamcp_results
+        if stopped_early:
+            # do VI or RVI 
+            # if VI, build MDP model 
+            # compute policy using VI 
+            #print("STOPPED EARLY!!!")
+            print("stop info: ", results["stop_info"])
+            
+            # if VI:
+            #     mode = "VI"
+            #     # build mdp
+            #     model = build_mdp
+            # elif RVI: 
+            #     mode = "RVI"
+            #     # build imdp
+            #     model = build_imdp
+            
+            #print("uncomment below!!!")
+            # policy_data = {}
+            # start = time.perf_counter()
+            # Q, V, policy = value_iteration(model=model)
+            # total_time = time.perf_counter() - start 
+            # policy_data["Q"] = Q 
+            # policy_data["V"] = V
+            # policy_data["policy"] = policy 
+            # policy_data["total_time"] = total_time
+            # print(f"{mode} done in {total_time:.1f}s")
+
+            # # run new policy 
+            # results = self.sim_offline_policy(mdp=model, policy=policy, bamcp_results=bamcp_results, s0=current_state)
+
+        return results
+        
+
+
 
             
 

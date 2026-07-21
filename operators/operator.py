@@ -52,8 +52,7 @@ class Operator(ABC):
         """
 
     def get_action_likelihoods(self, domain_state, internal_state, issued_domain_action, parameters=None):
-        state = (domain_state, internal_state)
-        enabled_actions = self.enabled_actions[state]
+        enabled_actions = self.enabled_actions[domain_state]
         likelihoods = {}
         for action in enabled_actions:
             if action == issued_domain_action:

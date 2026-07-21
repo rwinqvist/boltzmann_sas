@@ -1,5 +1,3 @@
-from belief.fisher_info import fisher_info_alpha_ceiling
-
 class AlphaCollapseMonitor:
     """
     Tracks whether it's safe to stop updating alpha's belief and freeze it to
