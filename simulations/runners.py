@@ -98,8 +98,8 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
         for sim in range(num_sims)
     )
     
-    print("remove this exit!!!")
-    exit()
+    #print("remove this exit!!!")
+    #exit()
 
     all_results = load_all_sims(
         domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.BAMCP,
@@ -146,7 +146,7 @@ def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_co
 
 def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
                         auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False):
-    print("\nApproach: Standard BAMCP")
+    print("\nApproach: Early-stopping BAMCP")
 
     if debug: 
         n = len(beta_grid) * len(alpha_grid)

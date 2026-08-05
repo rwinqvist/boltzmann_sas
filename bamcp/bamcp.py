@@ -5,6 +5,7 @@ import random
 import time
 from typing import Optional
 from boltzmann_sas.boltzmann_bamdp import BoltzmannBAMDP
+from boltzmann_sas.boltzmann_mdp import BoltzmannMDP
 from boltzmann_sas.globals import DEFER
 from operators.utils import OperatorParams
 from bamcp.history import History
@@ -506,7 +507,7 @@ class BAMCPSolver():
 
             hist_data = Observation(domain_state=domain_state, op_state=op_state, operator=operator, executed_domain_action=executed_domain_action, issued_domain_action=issued_domain_action)
 
-            true_params = self.bamdp.operators[0].params
+            true_params = self.bamdp.operators[0].true_params
             enabled_actions = self.bamdp.domain.enabled_actions[state[0]]
             Phi_nom = self.bamdp.operators[0].nom_scoring
 
@@ -762,8 +763,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
         return results, current_state, stopped
     
 
-    def sim_offline_policy(self, mdp, policy, bamcp_results, s0):
-        results = bamcp_results.copy()
+    def sim_offline_policy(self, mdp:BoltzmannMDP, policy, results, s0):
         cum_rewards = results["cum_rewards"]
         rewards = results["rewards"]
         total_reward = results["total_reward"]
@@ -797,7 +797,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
             # pad belief and history 
             belief_vec.append(belief_vec[-1])
             belief_stats.append(belief_stats[-1])
-            history = history.add_entry(history.parent_history)
+            history.add_entry(issued_action, executed_action, next_state)
     
             state = next_state
             total_reward += reward 
@@ -831,36 +831,38 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
                                        cum_rewards=cum_rewards,
                                        max_steps=max_steps)
         
-        results = bamcp_results
+        results = bamcp_results.copy()
         if stopped_early:
             # do VI or RVI 
             # if VI, build MDP model 
             # compute policy using VI 
-            #print("STOPPED EARLY!!!")
-            print("stop info: ", results["stop_info"])
-            
-            # if VI:
-            #     mode = "VI"
-            #     # build mdp
-            #     model = build_mdp
-            # elif RVI: 
-            #     mode = "RVI"
-            #     # build imdp
-            #     model = build_imdp
-            
-            #print("uncomment below!!!")
-            # policy_data = {}
-            # start = time.perf_counter()
-            # Q, V, policy = value_iteration(model=model)
-            # total_time = time.perf_counter() - start 
-            # policy_data["Q"] = Q 
-            # policy_data["V"] = V
-            # policy_data["policy"] = policy 
-            # policy_data["total_time"] = total_time
-            # print(f"{mode} done in {total_time:.1f}s")
+            # print("STOPPED EARLY!!!")
+            # print("stop info: ", results["stop_info"])
 
-            # # run new policy 
-            # results = self.sim_offline_policy(mdp=model, policy=policy, bamcp_results=bamcp_results, s0=current_state)
+            # use mean for now 
+            all_planning_params = self.bamdp.get_params_est()
+
+            operators = []
+            for operator in self.bamdp.operators:
+                op_copy = operator.copy()
+                if operator in self.bamdp.boltzmann_operator_indices:
+                    opidx = self.bamdp.boltzmann_operator_indices[operator]
+                    planning_params = all_planning_params[opidx]
+                    op_copy.set_planning_params(planning_params)
+                operators.append(operator)
+
+            mdp = BoltzmannMDP(self.bamdp.domain, operators)
+            # compute policy
+            policy_data = {}
+            start = time.perf_counter()
+            Q, V, policy = value_iteration(model=mdp)
+            total_time = time.perf_counter() - start 
+            results["Q"] = Q 
+            results["V"] = V
+            results["policy"] = policy 
+            results["VI_time"] = total_time
+
+            results = self.sim_offline_policy(mdp=mdp, policy=policy, results=results, s0=current_state)
 
         return results
         

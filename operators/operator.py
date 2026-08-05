@@ -2,6 +2,7 @@ import numpy as np
 import random
 import traceback
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from operators.context import OperatorContext
 
 class Operator(ABC): 
@@ -50,6 +51,9 @@ class Operator(ABC):
         """
             Construct operator from OperatorContext object.
         """
+
+    def copy(self):
+        return deepcopy(self)
 
     def get_action_likelihoods(self, domain_state, internal_state, issued_domain_action, parameters=None):
         enabled_actions = self.enabled_actions[domain_state]

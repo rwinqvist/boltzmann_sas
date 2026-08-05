@@ -62,6 +62,7 @@ def average_marginal_matrices(results_list, param_index, opidx=0, belief_key="be
     mean_matrix = np.mean(padded, axis=0)
     return values, mean_matrix
 
+
 def plot_belief_heatmap(ax, values, matrix, true_value=None, title=None, ylabel=None, cmap="viridis"):
     """ Plot one parameter's belief-over-time heatmap on a given axis. """
     im = ax.imshow(
@@ -90,49 +91,6 @@ def plot_belief_heatmap(ax, values, matrix, true_value=None, title=None, ylabel=
  
     return im
  
- 
-def old_plot_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", save_path=None):
-    """
-    Plot beta and alpha marginal-belief heatmaps (probability mass by value, over
-    simulation step), one row per approach, averaged across that approach's sims.
- 
-    :param belief_key: key in each results dict holding the full belief history.
-        Must be the full grid distribution (e.g. "belief"), not "belief_stats"
-        (which holds collapsed summary statistics only, not the distribution).
-    """
-    true_beta = config["true_beta"]
-    true_alpha = config["true_alpha"]
- 
-    approaches = list(results_by_approach.keys())
-    n_rows = len(approaches)
- 
-    fig, axes = plt.subplots(n_rows, 2, figsize=(13, 4.5 * n_rows), squeeze=False)
- 
-    for row, approach in enumerate(approaches):
-        results_list = results_by_approach[approach]
-        label = approach.value if hasattr(approach, "value") else approach
- 
-        beta_values, beta_matrix = average_marginal_matrices(results_list, BETA_INDEX, opidx=opidx, belief_key=belief_key)
-        alpha_values, alpha_matrix = average_marginal_matrices(results_list, ALPHA_INDEX, opidx=opidx, belief_key=belief_key)
- 
-        im_b = plot_belief_heatmap(
-            axes[row][0], beta_values, beta_matrix, true_value=true_beta,
-            title=f"{label}: β belief over time", ylabel="β",
-        )
-        im_a = plot_belief_heatmap(
-            axes[row][1], alpha_values, alpha_matrix, true_value=true_alpha,
-            title=f"{label}: α belief over time", ylabel="α",
-        )
-        fig.colorbar(im_b, ax=axes[row][0], label="P(value)")
-        fig.colorbar(im_a, ax=axes[row][1], label="P(value)")
- 
-    plt.tight_layout()
- 
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
-        print(f"Saved: {save_path}")
-    else:
-        plt.show()
 
 
 def plot_belief_heatmaps(ax, values, matrix, true_value=None, title=None, ylabel=None, cmap="viridis", vmax=None):
@@ -273,70 +231,99 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
     else:
         plt.show()
 
-def old_plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief", colors=None, save_path=None):
+
+def plot_final_reward_time_and_belief_heatmaps(results_by_approach, config, opidx=0, belief_key="belief",
+                                                 colors=None, save_path=None, display_res_beta=None, display_res_alpha=None):
     """
     Plot layout:
-        Row 0:    [cumulative reward, all approaches overlaid | DEFER rate, all approaches overlaid]
-        Row 1..n: [β heatmap | α heatmap] for each approach
+        Row 0:    [final total reward per approach (bar, mean +/- std across sims) |
+                   total wall-clock time per approach (bar, mean +/- std across sims)]
+        Row 1..n: [beta heatmap | alpha heatmap] for each belief-tracking approach
+
+    Same belief-heatmap logic as plot_reward_and_belief_heatmaps -- only row 0 differs
+    (final scalar comparison instead of a reward/action-rate time series).
     """
     true_beta = config["true_beta"]
     true_alpha = config["true_alpha"]
- 
+
     approaches = list(results_by_approach.keys())
-    n_rows = len(approaches)
- 
+
+    # same reasoning as plot_reward_and_belief_heatmaps: not every approach has
+    # belief data (e.g. VI), row 0 includes everyone, belief rows don't.
+    belief_approaches = [
+        a for a in approaches
+        if results_by_approach[a] and belief_key in results_by_approach[a][0]
+    ]
+    n_rows = len(belief_approaches)
+
     default_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     if colors is None:
         colors = {}
- 
+
     fig, axes = plt.subplots(n_rows + 1, 2, figsize=(13, 4.5 * (n_rows + 1)))
- 
-    # --- row 0: shared reward + DEFER rate comparison across approaches ---
+
+    # --- row 0: final reward and total time bar comparison across approaches ---
+    labels, bar_colors = [], []
+    reward_means, reward_stds = [], []
+    time_means, time_stds = [], []
+
     for i, approach in enumerate(approaches):
         results_list = results_by_approach[approach]
         label = approach.value if hasattr(approach, "value") else approach
         color = colors.get(label, default_cycle[i % len(default_cycle)])
- 
-        cum_rewards = pad_and_stack([r["cum_rewards"] for r in results_list])
-        plot_mean_std(axes[0][0], cum_rewards, label, color)
- 
-        defer_series = pad_and_stack([r["is_defer"] for r in results_list])
-        plot_mean_std(axes[0][1], defer_series, label, color, plot_std=False)
- 
-    axes[0][0].set_xlabel("Step", fontsize=12)
-    axes[0][0].set_ylabel("Cumulative reward", fontsize=12)
-    axes[0][0].set_title("Cumulative reward", fontsize=12)
-    axes[0][0].legend(fontsize=10)
-    axes[0][0].grid(alpha=0.3)
- 
-    axes[0][1].set_xlabel("Step", fontsize=12)
-    axes[0][1].set_ylabel("DEFER rate", fontsize=12)
-    axes[0][1].set_title("DEFER rate over steps", fontsize=12)
-    axes[0][1].legend(fontsize=10)
-    axes[0][1].grid(alpha=0.3)
-    axes[0][1].set_ylim(-0.05, 1.05)
- 
-    # --- rows 1..n: per-approach belief heatmaps ---
-    for i, approach in enumerate(approaches):
+
+        final_rewards = np.array([r["total_reward"] for r in results_list])
+        total_times = np.array([r["total_time"] for r in results_list])
+
+        labels.append(label)
+        bar_colors.append(color)
+        reward_means.append(final_rewards.mean())
+        reward_stds.append(final_rewards.std())
+        time_means.append(total_times.mean())
+        time_stds.append(total_times.std())
+
+    x = np.arange(len(labels))
+
+    axes[0][0].bar(x, reward_means, yerr=reward_stds, color=bar_colors, capsize=5)
+    axes[0][0].set_xticks(x)
+    axes[0][0].set_xticklabels(labels, rotation=20, ha="right")
+    axes[0][0].set_ylabel("Final total reward", fontsize=12)
+    axes[0][0].set_title("Final total reward (mean \u00b1 std across sims)", fontsize=12)
+    axes[0][0].grid(alpha=0.3, axis="y")
+
+    axes[0][1].bar(x, time_means, yerr=time_stds, color=bar_colors, capsize=5)
+    axes[0][1].set_xticks(x)
+    axes[0][1].set_xticklabels(labels, rotation=20, ha="right")
+    axes[0][1].set_ylabel("Total time (s)", fontsize=12)
+    axes[0][1].set_title("Total wall-clock time (mean \u00b1 std across sims)", fontsize=12)
+    axes[0][1].grid(alpha=0.3, axis="y")
+
+    # --- rows 1..n: per-approach belief heatmaps (belief-tracking approaches only) ---
+    for i, approach in enumerate(belief_approaches):
         results_list = results_by_approach[approach]
         label = approach.value if hasattr(approach, "value") else approach
- 
+
         beta_values, beta_matrix = average_marginal_matrices(results_list, BETA_INDEX, opidx=opidx, belief_key=belief_key)
         alpha_values, alpha_matrix = average_marginal_matrices(results_list, ALPHA_INDEX, opidx=opidx, belief_key=belief_key)
- 
-        im_b = plot_belief_heatmap(
+
+        if display_res_beta is not None:
+            beta_values, beta_matrix = coarsen_marginal(beta_values, beta_matrix, display_res_beta)
+        if display_res_alpha is not None:
+            alpha_values, alpha_matrix = coarsen_marginal(alpha_values, alpha_matrix, display_res_alpha)
+
+        im_b = plot_belief_heatmaps(
             axes[i + 1][0], beta_values, beta_matrix, true_value=true_beta,
-            title=f"{label}: β belief over time", ylabel="β",
+            title=f"{label}: \u03b2 belief over time", ylabel="\u03b2",
         )
-        im_a = plot_belief_heatmap(
+        im_a = plot_belief_heatmaps(
             axes[i + 1][1], alpha_values, alpha_matrix, true_value=true_alpha,
-            title=f"{label}: α belief over time", ylabel="α",
+            title=f"{label}: \u03b1 belief over time", ylabel="\u03b1",
         )
         fig.colorbar(im_b, ax=axes[i + 1][0], label="P(value)")
         fig.colorbar(im_a, ax=axes[i + 1][1], label="P(value)")
- 
+
     plt.tight_layout()
- 
+
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"Saved: {save_path}")

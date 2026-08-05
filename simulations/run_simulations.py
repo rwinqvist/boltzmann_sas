@@ -5,8 +5,8 @@ from operators.utils import OperatorParams, OperatorType
 from simulations.approach import Approach
 from simulations.scoring_functions import generate_scoring_function
 from simulations.utils import load_all_sims, get_grid_tag, make_grid
-from simulations.plotting import plot_reward_and_belief_heatmaps
-from simulations.runners import run_standard_bamcp, run_standard_vi
+from simulations.plotting import plot_reward_and_belief_heatmaps, plot_final_reward_time_and_belief_heatmaps
+from simulations.runners import run_standard_bamcp, run_standard_vi, run_early_stopping_bamcp
 from simulations.domain_transitions import build_auto_domain_transitions
 
 
@@ -22,12 +22,13 @@ def main():
     num_sims = 20
 
     # belief representation
-    lb_beta, ub_beta = 0, 5
+    lb_beta, ub_beta = 0, 10
     lb_alpha, ub_alpha = 0, 5
     grid_res = 0.1
     beta_grid = make_grid(lb_beta, ub_beta, grid_res)
     alpha_grid = make_grid(lb_alpha, ub_alpha, grid_res)
     grid_tag = get_grid_tag(lb_beta, ub_beta, lb_alpha, ub_alpha, grid_res)
+
 
     # MDP (used params)
     planning_beta = 10
@@ -97,20 +98,30 @@ def main():
         save_results=save_results, n_jobs=n_jobs, debug=debug,
     )
 
+    # # run early stopping bamcp 
+    results_bamcp_es = run_early_stopping_bamcp(config=config, domain=domain, Phi_nom=Phi_nom, true_beta=true_beta, true_alpha=true_alpha,
+                                                cost_nominals=cost_nominals, seed=SEED, num_sims=num_sims,
+                                                auto_op_contexts=auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid,
+                                                is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, save_results=save_results,
+                                                n_jobs=n_jobs, debug=debug)
+
     results_by_approach = {
-        Approach.BAMCP.value: results_bamcp
+        Approach.BAMCP.value: results_bamcp,
+        Approach.BAMCP_ES.value: results_bamcp_es
     }
 
-    for planning_beta, planning_alpha in used_params:
-        results_vi = run_standard_vi(config=config, domain=domain, Phi_nom=Phi_nom, true_beta=true_beta,
-                                    true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, 
-                                    cost_nominals=cost_nominals, seed=SEED, num_sims=num_sims, auto_op_contexts=auto_op_contexts, 
-                                    is_toy=is_toy, fn_app=fn_app, save_results=save_results, n_jobs=n_jobs, debug=debug)
-        results_by_approach[f"Approach.VI: b={planning_beta}, a={planning_alpha}"] = results_vi
+
+    # for planning_beta, planning_alpha in used_params:
+    #     results_vi = run_standard_vi(config=config, domain=domain, Phi_nom=Phi_nom, true_beta=true_beta,
+    #                                 true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, 
+    #                                 cost_nominals=cost_nominals, seed=SEED, num_sims=num_sims, auto_op_contexts=auto_op_contexts, 
+    #                                 is_toy=is_toy, fn_app=fn_app, save_results=save_results, n_jobs=n_jobs, debug=debug)
+    #     results_by_approach[f"Approach.VI: b={planning_beta}, a={planning_alpha}"] = results_vi
         
    
 
-    plot_reward_and_belief_heatmaps(results_by_approach, config)
+    #plot_reward_and_belief_heatmaps(results_by_approach, config)
+    plot_final_reward_time_and_belief_heatmaps(results_by_approach, config)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ class BoltzmannHumanOperator(Operator):
     Class representing an Autonomous Operator.
     """
 
-    def __init__(self, num_states, actions, enabled_actions:dict, domain_transitions:dict, nom_scoring:dict, params:OperatorParams, init_belief: Belief, nom_cost=0):
+    def __init__(self, num_states, actions, enabled_actions:dict, domain_transitions:dict, nom_scoring:dict, true_params:OperatorParams, init_belief: Belief, nom_cost=0):
         """
         Initialization of Autonomous Operator instance.
         
@@ -54,11 +54,12 @@ class BoltzmannHumanOperator(Operator):
 
         super().__init__(OperatorType.BHUMAN, num_states, actions, enabled_actions, domain_transitions, nom_cost=nom_cost)
         
-        self.params = params
-        self.nom_beta = params.beta
+        self.true_params = true_params
+        self.nom_beta = true_params.beta
         self.nom_scoring = nom_scoring 
-        self.alpha = params.alpha
+        self.alpha = true_params.alpha
         self.init_belief = init_belief
+        self.planning_params = None
 
         if self.nom_scoring is None:
             raise ValueError("Scoring function for Boltzmann human operator cannot be None!")
@@ -99,7 +100,7 @@ class BoltzmannHumanOperator(Operator):
         params = operator_context.params
         domain_transitions = operator_context.domain_transitions
 
-        return cls(num_states=num_states, actions=actions, enabled_actions=enabled_actions, domain_transitions=domain_transitions, nom_scoring=nom_scoring, params=params, init_belief=init_belief)
+        return cls(num_states=num_states, actions=actions, enabled_actions=enabled_actions, domain_transitions=domain_transitions, nom_scoring=nom_scoring, true_params=params, init_belief=init_belief)
     
 
 
@@ -108,10 +109,14 @@ class BoltzmannHumanOperator(Operator):
         return self.nom_beta ** self.state
     
 
+    def set_planning_params(self, planning_params):
+        self.planning_params = planning_params
+    
+
     def get_action_likelihoods(self, domain_state, internal_state, issued_domain_action, parameters=None):
         enabled_actions = self.enabled_actions[domain_state]
         likelihoods = {}
-        params = parameters if parameters is not None else self.params
+        params = parameters if parameters is not None else self.true_params
 
         for action in enabled_actions:
             p = self.boltzmann_kernel(domain_state, internal_state, action, issued_domain_action, params)
@@ -123,7 +128,7 @@ class BoltzmannHumanOperator(Operator):
     def resolve_domain_action_choice(self, domain_state, op_state, issued_domain_action, params: Optional[OperatorParams] = None):
         """ Resolve operator's domain action choice based on suggested `issued_domain_action`. Based on Boltzmann kernel. """
 
-        params = params if params is not None else self.params
+        params = params if params is not None else self.true_params
         
         action_weights = []
         for action in self.enabled_actions[domain_state]: 

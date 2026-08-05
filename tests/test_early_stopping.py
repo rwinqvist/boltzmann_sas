@@ -17,7 +17,7 @@ def main():
     # layered-mdp domain info
     depth = 100
     num_actions = 3
-    true_beta = 10
+    true_beta = 5
     true_alpha = 1.2
     num_sims = 20
 
@@ -45,8 +45,8 @@ def main():
     # if you want to keep a core free while these run in the background.
     n_jobs = -1
 
-    fn_app = ""
-    save_results = False
+    fn_app = "test_bamcp_solver"
+    save_results = True
     is_toy = True
     debug = False 
     manual_debug = False
