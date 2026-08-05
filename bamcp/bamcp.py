@@ -849,7 +849,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
                     opidx = self.bamdp.boltzmann_operator_indices[operator]
                     planning_params = all_planning_params[opidx]
                     op_copy.set_planning_params(planning_params)
-                operators.append(operator)
+                operators.append(op_copy)
 
             mdp = BoltzmannMDP(self.bamdp.domain, operators)
             # compute policy

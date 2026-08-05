@@ -35,7 +35,7 @@ def get_results_dir(domain_name, is_toy=False):
 
 def get_policy_dir(domain_name, is_toy=False):
     subfolder = "toy_policies" if is_toy else ""
-    return f"{ROOT_DIR}/simulations/policies/{domain_name}policies/{subfolder}"
+    return f"{ROOT_DIR}/simulations/policies/{domain_name}_policies/{subfolder}"
 
 def get_vi_policy_path(domain_name, domain_tag, num_humans, num_autos, true_beta, true_alpha, planning_beta, planning_alpha, seed, is_toy=False, fn_app=""):
     policy_dir = get_policy_dir(domain_name, is_toy)

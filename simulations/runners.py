@@ -189,8 +189,9 @@ def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cos
 
 
 
-
-# ------- Standard VI --------- # 
+# ============================================================
+# Standard VI
+# ============================================================
 def _run_std_vi_one_sim(sim, domain, mdp:BoltzmannMDP, policy_data, auto_op_contexts, config,
                         true_beta, true_alpha, planning_beta, planning_alpha, seed, is_toy, fn_app, save_results):
     """ Runs a single Bayesian-warmstart simulation. Top-level (picklable) for joblib/loky. """

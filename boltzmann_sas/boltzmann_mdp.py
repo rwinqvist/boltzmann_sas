@@ -60,7 +60,6 @@ class BoltzmannMDP():
         logging.info("BoltzmannSAS MDP initialized.")
 
 
-
     def get_enabled_actions(self):
         enabled_actions = {}
         for state in self.states:
@@ -96,98 +95,97 @@ class BoltzmannMDP():
         for state in self.states:
             if not self.is_goal(state) and not self.is_terminal(state):
                 for action in self.enabled_actions[state]:
-                    successors = self.get_successors(state, action)
-                    #print("Successors: ", successors)
-                    #exit()
-                    self.T[(state, action)] = successors 
-                    for next_state in successors.keys():
-                        self.R[(state, action, next_state)] = self.get_reward(state, action, next_state)
+                    # action here is an allocation decision (operator, communication signal)
+                    successors, rewards = self.build_transition_and_rewards(state, action)
+                    self.T[(state, action)] = successors
+                    for next_state, reward in rewards.items():
+                        self.R[(state, action, next_state)] = reward
                 
 
+    def build_transition_and_rewards(self, state, issued_action):
+        """
+        Construct:
+            1. P(s' | s, issued_action)
+            2. E[r | s, issued_action, s']
 
-    def get_successors(self, state, action):
+        The issued action is an unresolved allocation decision (operator index, communication signal)
         """
-            Get successor states and their likelihoods for PLANNING: `action`
-            here is unresolved ADVICE (including DEFER), and this marginalizes
-            over the operator's full Boltzmann-compliance distribution.
-            Do NOT call this with an already-resolved/executed action -- see
-            get_resolved_successors() for that case (used by step()).
-        """
-        if (state, action) in self.T: 
-            return self.T[(state, action)]
-    
-        successors = {}
 
         domain_state, joint_op_state = state 
+        active_opidx, advice = issued_action 
 
-        # unpack action info and find active operator
-        active_opidx, advice = action 
         active_operator = self.operators[active_opidx]
         active_op_state = joint_op_state[active_opidx]
 
-        # need to first resolve action likelihoods 
-        action_likelihoods = active_operator.get_action_likelihoods(domain_state=domain_state, internal_state=active_op_state, issued_domain_action=advice)
+        action_likelihoods = active_operator.get_action_likelihoods(
+            domain_state=domain_state,
+            internal_state=active_op_state,
+            issued_domain_action=advice,
+        )
 
-        #print("state: ", state)
-        #print("action: ", action)
-        #print(action_likelihoods)
-        #exit()
+        # For each successor domain state, accuumulate: 
+        #  * probability mass 
+        #  * probability-weighted domain reward
 
-        domain_transitions = {}
-        for domain_action, p_action in action_likelihoods.items():
-            #print("\ndomain action: ", domain_action)
-            #print("p: ", p_action)
-            domain_successors = active_operator.get_domain_transitions(domain_state, active_op_state, domain_action)
-            for next_state, p_trans in domain_successors.items():
-                #print("next state: ", next_state)
-                #print("p2: ", p2)
-                if next_state in domain_transitions:
-                    domain_transitions[next_state] += p_action*p_trans
-                    #print("already in: ", domain_transitions_all)
-                else:
-                    domain_transitions[next_state] = p_action*p_trans
-                    #print("new: ", domain_transitions_all)
-        
+        domain_probabilities = {}
+        domain_reward_numerators = {}
 
-        #print("domain transitions: ", domain_transitions)
-        #exit()
+        for executed_domain_action, p_action in action_likelihoods.items():
+            domain_successors = active_operator.get_domain_transitions(domain_state, active_op_state, executed_domain_action)
 
-        #p_success = active_operator.get_domain_performance_rate(active_op_state, domain_action)
-        #next_domain_states, next_domain_probs = self.domain.get_transitions(domain_state, domain_action, p_success)
+            for next_domain_state, p_transition in domain_successors.items():
+                weight = p_action * p_transition 
 
-        # get next operator performance state transitions 
+                realized_domain_reward = self.domain.get_reward(domain_state, executed_domain_action, next_domain_state)
+
+                domain_probabilities[next_domain_state] = domain_probabilities.get(next_domain_state, 0) + weight
+
+                domain_reward_numerators[next_domain_state] = domain_reward_numerators.get(next_domain_state, 0) + weight*realized_domain_reward
+
+
+        # operator state transitions are independent of executed action 
         next_op_states = {}
-        for opidx in range(self.num_operators):
-            operator = self.operators[opidx]
+        for opidx, operator in enumerate(self.operators):
             op_state = joint_op_state[opidx]
             is_active = operator == active_operator
-            next_op_states[opidx] = operator.get_operator_state_transitions(op_state, is_active, domain_action)
+            next_op_states[opidx] = operator.get_operator_state_transitions(op_state, is_active)
 
         next_joint_op_states = list(itertools.product(*next_op_states.values()))
 
-        # get full state transitions 
-        for next_domain_state, p_domain in domain_transitions.items():
-            for next_joint_op_state in next_joint_op_states:
-                next_state = (next_domain_state, next_joint_op_state)
-                p_op = 1 
+        operator_cost = active_operator.get_operator_cost(active_op_state)
 
+        successors = {}
+        rewards = {}
+
+        for next_domain_state, p_domain in domain_probabilities.items(): 
+            conditional_domain_reward = domain_reward_numerators[next_domain_state] / p_domain 
+
+            for next_joint_op_state in next_joint_op_states: 
+                p_operator = 1 
                 for opidx, next_op_state in enumerate(next_joint_op_state):
-                    p_op *= next_op_states[opidx][next_op_state]
+                    p_operator *= next_op_states[opidx][next_op_state]
 
-                p = p_domain * p_op 
-                # ensure state is proper
-                assert next_state in self.states, f"Next state: {next_state} not in state space"
+                next_state = (next_domain_state, next_joint_op_state)
+                probability = p_domain * p_operator 
 
-                successors[next_state] = p 
-        
+                assert next_state in self.states
 
-        self.T[(state, action)] = successors
-        return successors
+                successors[next_state] = (
+                    successors.get(next_state, 0.0) + probability
+                )
+
+                rewards[next_state] = (
+                    conditional_domain_reward - operator_cost
+                )
+
+        return successors, rewards
     
 
+
     def get_reward(self, state, action, next_state):
-        #if (state, action, next_state) in self.R:
-            #return self.R[(state, action, next_state)]
+        """
+            Returns the reward obtained from the executed domain action inside `action`.
+        """
         
         domain_state, joint_op_state = state 
         active_op_idx, domain_action = action 
@@ -207,6 +205,7 @@ class BoltzmannMDP():
         
         #self.R[(state, action, next_state)] = r
         return r 
+
     
     def get_resolved_successors(self, state, resolved_action):
         """
