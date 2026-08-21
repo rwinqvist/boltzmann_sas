@@ -11,3 +11,6 @@ def find_project_root(marker_files=("global_config.py", ".gitignore")) -> Path:
 
 # root dir of project
 ROOT_DIR = find_project_root()
+
+LAYERED_MDP = "layered_mdp"
+UAV = "uav"

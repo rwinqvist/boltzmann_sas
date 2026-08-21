@@ -158,6 +158,12 @@ class BoltzmannMDP():
         rewards = {}
 
         for next_domain_state, p_domain in domain_probabilities.items(): 
+            if p_domain <= 0:
+                # unreachable candidate (only ever a zero-prob "slip" alternate,
+                # never anyone's real transition target) -- skip instead of
+                # dividing into it
+                continue
+
             conditional_domain_reward = domain_reward_numerators[next_domain_state] / p_domain 
 
             for next_joint_op_state in next_joint_op_states: 

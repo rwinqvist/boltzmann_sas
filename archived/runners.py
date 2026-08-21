@@ -11,7 +11,7 @@ def _run_naive_freq_warmstart_one_sim(sim, domain, operator_contexts, auto_op_co
 
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.NAIVE_FREQ_WARMSTART, config=config, n_warmstart=n_warmstart,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app,
     )
@@ -113,7 +113,7 @@ def _run_bayesian_warmstart_one_sim(sim, domain, operator_contexts, auto_op_cont
 
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.NAIVE_BAYESIAN_WARMSTART, config=config, n_warmstart=n_warmstart,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
     )
@@ -231,7 +231,7 @@ def _run_collapse_aware_bamcp_one_sim(sim, domain, operator_contexts, auto_op_co
 
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP_ALPHA_COLLAPSE,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy,
         fn_app=fn_app, grid_tag=grid_tag, config=config,

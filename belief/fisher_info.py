@@ -93,6 +93,28 @@ def accumulate_fisher_info(observations, beta_hat, alpha_hat, enabled_actions):
     return total 
 
 
+def get_shur_complements(fisher_matrix):
+    """
+    Extract shur complements (diagonal entries) 
+    accumulaeted 2x2 FIM [[A, C], [C, B]] via the standard 2x2 inverse
+    J_beta = B / (A*B-C^2)
+    J_alpha = A / (A*B-C^2)
+
+    Returns (var_beta, var_alpha) or (inf, inf) if the matrix is 
+    singular or near-singular.
+    """
+    A, C = fisher_matrix[0, 0], fisher_matrix[0, 1]
+    B = fisher_matrix[1, 1]
+    det = A*B - C**2
+    if det <= 0:
+        #print("Det of FIM is: ", det)
+        return np.inf, np.inf
+
+    J_beta = A - C**2/B 
+    J_alpha = B - C**2/A 
+    return J_beta, J_alpha
+
+
 def marginal_variances(fisher_matrix):
     """
     Extract marginal Var(beta) and Var(alpha) from the 

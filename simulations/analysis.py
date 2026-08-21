@@ -1,6 +1,5 @@
 import numpy as np
 from boltzmann_sas.globals import DEFER
-from boltzmann_sas.globals import DEFER
 from bamcp.bamcp import BAMCPSolver
 from bamcp.history import History
 from belief.belief import FreqBelief, JointGridBelief

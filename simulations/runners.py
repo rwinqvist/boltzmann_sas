@@ -44,7 +44,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
 
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
@@ -102,7 +102,7 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
     #exit()
 
     all_results = load_all_sims(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.BAMCP,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
         num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
     )
@@ -124,7 +124,7 @@ def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_co
 
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP_ES,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
@@ -179,7 +179,7 @@ def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cos
     )
 
     all_results = load_all_sims(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.BAMCP_ES,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP_ES,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
         num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
     )
@@ -201,7 +201,7 @@ def _run_std_vi_one_sim(sim, domain, mdp:BoltzmannMDP, policy_data, auto_op_cont
 
     print(f"Sim: {sim + 1}")
     fn = get_results_path(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1,
+        domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.VI,
         true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, config=config
     )
@@ -279,7 +279,7 @@ def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, planning_bet
     operator_contexts = [bhuman1] + list(auto_op_contexts)
 
     mdp = build_sas(domain, operator_contexts, model_type=MDP)
-    policy_fn = get_vi_policy_path(domain_name=domain.domain_name, domain_tag=domain.id_tag(), num_humans=1, num_autos=len(auto_op_contexts), 
+    policy_fn = get_vi_policy_path(domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1, num_autos=len(auto_op_contexts), 
                                    true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, is_toy=is_toy, fn_app=fn_app)
     
     if os.path.exists(policy_fn):
@@ -295,6 +295,7 @@ def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, planning_bet
         policy_data["policy"] = policy 
         policy_data["total_time"] = total_time
         print(f"VI done in {total_time:.1f}s")
+        print("Saving policy file")
         joblib.dump(policy_data, policy_fn)
     
     Parallel(n_jobs=n_jobs, backend="loky")(
@@ -303,7 +304,7 @@ def run_standard_vi(config, domain, Phi_nom, true_beta, true_alpha, planning_bet
         for sim in range(num_sims)
     )
 
-    all_results = load_all_sims(domain_name=domain.domain_name, domain_tag=domain.id_tag(), approach=Approach.VI,
+    all_results = load_all_sims(domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.VI,
                                 true_beta=true_beta, true_alpha=true_alpha, planning_beta=planning_beta, planning_alpha=planning_alpha, seed=seed, num_sims=num_sims,
                                 num_autos=len(auto_op_contexts), config=config, is_toy=is_toy, fn_app=fn_app)
     

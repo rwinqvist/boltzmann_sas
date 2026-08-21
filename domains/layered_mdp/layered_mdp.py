@@ -220,6 +220,7 @@ class LayeredMDP(object):
         )
     
 
+    @property
     def id_tag(self):
         """A short string identifying this domain instance for e.g. result paths."""
         return f"d{self.depth}_a{self.num_actions}"
@@ -307,8 +308,6 @@ class LayeredMDP(object):
         for next_state, p in next_states.items():
             if p != 0:
                 return next_state
-    
-
     
     def get_reward(self, state, action, next_state):
         if next_state in self.state_rewards:

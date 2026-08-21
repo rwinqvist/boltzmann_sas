@@ -13,7 +13,7 @@ from bamcp.objective import Objective
 from bamcp.utils import unpack_action
 from bamcp.rollout_policies import random_rollout
 from belief.observation import Observation
-from belief.fisher_info import accumulate_fisher_info, marginal_variances
+from belief.fisher_info import accumulate_fisher_info, marginal_variances, get_shur_complements
 from algorithms.value_iteration import value_iteration
 
 MIN_BIAS = 1
@@ -252,7 +252,7 @@ class BAMCP():
             current_level = initial_tree_level + len(trial_path)                # update tree level
 
             # Has this successor state been explored/expanded?
-            child_pair = (current_state, issued_action)
+            child_pair = (current_state, issued_action, executed_action)
             if child_pair not in current_node.children:
                 # TODO: check based on action too   : I'm not sure this is necessary. The init_node implicitly checks this (I think). The code has been used this way so I will assume it is correct.
                 break 
@@ -582,7 +582,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
         nor growing much. abs() is deliberate: growth and stagnation both 
         mean "not converging usefully", and shouldn't be treated differentely here. 
         """
-        if len(var_history) <= window: 
+        if len(var_history) < window: 
             return False 
         segment = np.array(var_history[-window:], dtype="float")
         if not np.all(np.isfinite(segment)) or np.any(segment <= 0):
@@ -604,16 +604,16 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
         Returns (stopped: bool, trigger_param: str or None)
         """
         
-        var_beta_history = [entry["var_beta"] for entry in acc_fisher_information]
-        var_alpha_history = [entry["var_alpha"] for entry in acc_fisher_information]
+        inv_info_beta_history = [entry["inv_info_beta"] for entry in acc_fisher_information]    # (variance if BvM holds)
+        inv_info_alpha_history = [entry["inv_info_alpha"] for entry in acc_fisher_information]  # (variance if BvM holds)
 
         trace_history = [ vb + va if np.isfinite(vb) and np.isfinite(va) else np.inf 
-                         for vb, va in zip(var_beta_history, var_alpha_history)]
+                         for vb, va in zip(inv_info_beta_history, inv_info_alpha_history)]
         
         stopped = self.is_stalled(trace_history, window, rel_threshold)
 
-        final_var_beta = var_beta_history[-1] if var_beta_history else np.inf 
-        final_var_alpha = var_alpha_history[-1] if var_alpha_history else np.inf 
+        final_var_beta = inv_info_beta_history[-1] if inv_info_beta_history else np.inf 
+        final_var_alpha = inv_info_alpha_history[-1] if inv_info_alpha_history else np.inf 
 
         trigger_param = None 
         if stopped: 
@@ -710,18 +710,22 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
                 params_ests = self.get_params_est()[opidx]
                 beta_hat, alpha_hat = params_ests.beta, params_ests.alpha
                 fisher_info = accumulate_fisher_info(observations[opidx], beta_hat, alpha_hat, enabled_actions=operator.enabled_actions)
-                var_beta, var_alpha = marginal_variances(fisher_info)
+                J_beta, J_alpha = get_shur_complements(fisher_info)
+                inv_info_beta = 1/J_beta 
+                inv_info_alpha = 1/J_alpha
+                #var_beta, var_alpha = marginal_variances(fisher_info)
                 
                 if opidx not in fisher_accumulator:
                     fisher_accumulator[opidx] = []
 
                 fisher_accumulator[opidx].append({
                     "matrix": fisher_info,
-                    "var_beta": var_beta, 
-                    "var_alpha": var_alpha
+                    "inv_info_beta": inv_info_beta, 
+                    "inv_info_alpha": inv_info_alpha
                 })
 
                 stopped, trigger_param, final_var_beta, final_var_alpha = self.check_stopping_criterion(acc_fisher_information=fisher_accumulator[opidx])
+                # it's not necessarily variance (since BvM is not guaranteed to hold for sequential Boltzmann), but will keep notation here
 
                 stop_info = {
                         "stopped_early": stopped,
@@ -833,6 +837,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
         
         results = bamcp_results.copy()
         if stopped_early:
+            print("Transition to VI planning.")
             # do VI or RVI 
             # if VI, build MDP model 
             # compute policy using VI 
@@ -853,7 +858,6 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
 
             mdp = BoltzmannMDP(self.bamdp.domain, operators)
             # compute policy
-            policy_data = {}
             start = time.perf_counter()
             Q, V, policy = value_iteration(model=mdp)
             total_time = time.perf_counter() - start 

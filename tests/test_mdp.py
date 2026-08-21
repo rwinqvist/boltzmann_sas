@@ -56,7 +56,7 @@ def main():
     domain = LayeredMDP.generate_layered_mdp(depth=depth, num_actions=num_actions, seed=SEED)
     cost_nominals = {a: 0 for a in domain.actions}
 
-    p_success = 0.75   # tune this to create a genuine crossover with the human, per earlier discussion
+    p_success = 0.75   # tune this to create a genuine crossover with the human
     fn_app += f"_{p_success}"
     auto_domain_transitions = build_auto_domain_transitions(domain, p_success)
 
