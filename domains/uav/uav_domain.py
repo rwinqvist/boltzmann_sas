@@ -73,6 +73,7 @@ class UAVDomain(object):
 
         self.collision_cost = 10
         self.nom_cost = 1
+        self.goal_reward = 0
         self.state_costs = {state: 0 if state not in self.obstacles else self.collision_cost for state in self.states}
         self.state_action_costs = {(state, action): self.nom_cost for state in self.states for action in self.actions}
 
@@ -83,7 +84,8 @@ class UAVDomain(object):
         print(f"  Obstacle rate:      {p_obs}")
         print(f"  Total states:       {len(self.states)}")
         print(f"  Terminal states:    {len(self.terminal_states)}")
-        print(f"  Map:\n{self}")
+        if size <= 30:
+            print(f"  Map:\n{self}")
 
     @property
     def id_tag(self):
@@ -170,6 +172,8 @@ class UAVDomain(object):
 
         for state in self.states: 
             state_rewards[state] = -self.state_costs.get(state, 0)
+            if state in self.goal_states:
+                state_rewards[state] = self.goal_reward
 
             # Only enable actions that actually change position -- exclude
             # actions that would just bump into a wall/boundary and self-loop.
@@ -253,6 +257,18 @@ class UAVDomain(object):
     
 
 
-    def get_reward(self, state, action, next_state): 
-        return self.state_rewards[next_state] - self.state_action_costs[(state, action)]
-         
+    # def get_reward(self, state, action, next_state): 
+    #     return self.state_rewards[next_state] - self.state_action_costs[(state, action)]
+    
+    def get_reward(self, state, action, next_state):
+        shaping = self._potential(next_state) - self._potential(state)
+        return self.state_rewards[next_state] - self.state_action_costs[(state, action)] + shaping
+
+
+    def _potential(self, state, shaping_scale=5.0):
+        if state in self.terminal_states:
+            return 0.0
+        row, col = state
+        dist = abs(row - self.row_goal) + abs(col - self.col_goal)
+        return -dist * shaping_scale
+            

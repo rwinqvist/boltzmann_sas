@@ -42,18 +42,19 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
     random.seed(sim_seed)
     np.random.seed(sim_seed)
 
-    print(f"Sim: {sim + 1}")
+    #print(f"Sim: {sim + 1}")
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
+    #print("fn: ", fn)
     if os.path.exists(fn):
-        print("Results already exist!")
+        #print("Results already exist!")
         return
 
     bamdp = build_sas(domain, operator_contexts, model_type=BAMDP)
-    solver = BAMCPSolver(bamdp, max_depth=config["max_depth"])
+    solver = BAMCPSolver(bamdp, max_depth=config["max_depth"], num_trials=config["num_trials"])
     start = time.perf_counter()
     results = solver.run()
     total_time = time.perf_counter() - start
@@ -61,7 +62,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
     results["config"] = config
     if save_results:
         joblib.dump(results, fn)
-    print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f})")
+    #print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f})")
 
 
 def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
@@ -93,7 +94,7 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_std_bamcp_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results,
+            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results
         )
         for sim in range(num_sims)
     )
@@ -101,11 +102,14 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
     #print("remove this exit!!!")
     #exit()
 
-    all_results = load_all_sims(
-        domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
-        num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
-    )
+    if save_results:
+        all_results = load_all_sims(
+            domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP,
+            true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
+            num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
+        )
+    else:
+        all_results = None
 
     return all_results
 
@@ -116,37 +120,37 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
 # ============================================================
 
 def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results):
+                            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results, window=20, tol=0.05):
     """ Runs a single standard-BAMCP simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
     np.random.seed(sim_seed)
 
-    print(f"Sim: {sim + 1}")
+    #print(f"Sim: {sim + 1}")
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP_ES,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
     if os.path.exists(fn):
-        print("Results already exist!")
+        #print("Results already exist!")
         return
 
     bamdp = build_sas(domain, operator_contexts, model_type=BAMDP)
-    solver = EarlyStoppingBAMCPSolver(bamdp, max_depth=config["max_depth"])
+    solver = EarlyStoppingBAMCPSolver(bamdp, max_depth=config["max_depth"], num_trials=config["num_trials"])
     start = time.perf_counter()
-    results = solver.run()
+    results = solver.run(window=window, tol=tol)
     total_time = time.perf_counter() - start
     results["total_time"] = total_time
     results["config"] = config
     if save_results:
         joblib.dump(results, fn)
-    print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f})")
+    #print(f"Sim {sim + 1} done in {total_time:.1f}s (total_reward={results['total_reward']:.2f})")
 
 
 def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False):
-    print("\nApproach: Early-stopping BAMCP")
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, window=20, tol=0.05):
+    print("\nApproach: FIHP")
 
     if debug: 
         n = len(beta_grid) * len(alpha_grid)
@@ -173,7 +177,7 @@ def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cos
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_early_stopping_bamcp_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results,
+            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results, window=window, tol=tol
         )
         for sim in range(num_sims)
     )
@@ -181,7 +185,7 @@ def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cos
     all_results = load_all_sims(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP_ES,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
-        num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
+        num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
 
     return all_results
@@ -199,7 +203,7 @@ def _run_std_vi_one_sim(sim, domain, mdp:BoltzmannMDP, policy_data, auto_op_cont
     random.seed(sim_seed)
     np.random.seed(sim_seed)
 
-    print(f"Sim: {sim + 1}")
+    #print(f"Sim: {sim + 1}")
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.VI,
@@ -207,7 +211,7 @@ def _run_std_vi_one_sim(sim, domain, mdp:BoltzmannMDP, policy_data, auto_op_cont
     )
 
     if os.path.exists(fn):
-        print("Results already exist!")
+        #print("Results already exist!")
         return 
 
     # simulate policy
@@ -243,7 +247,7 @@ def _run_std_vi_one_sim(sim, domain, mdp:BoltzmannMDP, policy_data, auto_op_cont
  
         state = next_state
         total_reward += reward 
-        total_steps += total_steps
+        total_steps += 1
         rewards.append(reward)
         cum_rewards.append(total_reward)
 

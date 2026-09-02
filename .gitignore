@@ -223,4 +223,8 @@ __marimo__/
 **/results/
 **/policies/
 **/toy_results/
-**/layouts
+**/layouts/
+**/paper_plots/
+**/latex_tables/
+**/archived_results/
+**/presentation_plots/

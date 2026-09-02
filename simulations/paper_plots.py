@@ -1,3 +1,5 @@
+from simulations.utils import Approach
+
 """
 paper_plots.py
 
@@ -164,7 +166,7 @@ DEFAULT_APPROACH_COLORS = {
 
 DEFAULT_APPROACH_LABELS = {
     "bamcp": "BAMCP",
-    "early_stopping_bamcp": "Early-stopping BAMCP",
+    "early_stopping_bamcp": "FIHP",
     "frequentist_warmstart": "Freq. warm-start",
     "bayesian_warmstart": "Bayesian warm-start",
     "bamcp_alpha_collapse": r"BAMCP ($\alpha$-collapse)",
@@ -294,7 +296,7 @@ def _extract_metric_grid(results_by_x_and_approach, metric):
 
 def plot_metric_vs_length(results_by_depth_and_approach, metric="total_reward",
                            ylabel=None, title=None, colors=None, labels=None,
-                           figsize=(8, 5), save_path=None):
+                           figsize=(8, 5), pdf_save_path=None, png_save_path=None):
     """
     Box plot of `metric` (e.g. "total_reward" or "total_time") across sims,
     grouped by MDP depth on the x-axis and by approach within each depth
@@ -311,15 +313,18 @@ def plot_metric_vs_length(results_by_depth_and_approach, metric="total_reward",
     fig, ax = plt.subplots(figsize=figsize)
     grouped_boxplot(ax, data, x_labels, approaches, colors=colors, labels=labels)
 
-    ax.set_xlabel("MDP depth")
+    ax.set_xlabel("DAG depth")
     ax.set_ylabel(ylabel or metric.replace("_", " ").capitalize())
     if title:
         ax.set_title(title)
 
     fig.tight_layout()
-    if save_path:
-        fig.savefig(save_path)
-        print(f"Saved: {save_path}")
+    if pdf_save_path:
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        fig.savefig(png_save_path)
+        print(f"Saved: {png_save_path}")
     return fig, ax
 
 
@@ -501,3 +506,158 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
         fig.savefig(save_path)
         print(f"Saved: {save_path}")
     return fig, axes
+
+
+
+
+# ============================================================
+# Figure: FIHP switch step vs. MDP length
+# ============================================================
+
+def _extract_stop_step_by_depth(results_by_depth_and_approach, approach=Approach.BAMCP_ES):
+    """
+    Pull FIHP's switch timestep (results["stop_info"]["stop_step"]) out of
+    {depth: {approach: [result_dict, ...]}}, keeping only trials that
+    actually triggered early stopping (stop_info["stopped_early"] is True).
+    Trials that ran to completion without switching don't have a real
+    "switch step" and are silently excluded (with a printed count) rather
+    than polluting the plot with their final step count.
+    """
+
+    depths = list(results_by_depth_and_approach.keys())
+    data = {approach: []}
+
+    for depth in depths: 
+        results_list = results_by_depth_and_approach[depth].get(approach, [])
+        steps, n_never_switched = [], 0
+        for r in results_list:
+            stop_info = r.get("stop_info")
+            if stop_info is None: 
+                continue 
+            if stop_info.get("stopped_early"):
+                steps.append(stop_info["stop_step"])
+            else:
+                n_never_switched += 1
+
+        data[approach].append(np.array(steps, dtype=float))
+
+    return depths, data
+
+
+def plot_switch_step_vs_length(results_by_depth_and_approach, approach=Approach.BAMCP_ES,
+                                ylabel=None, title=None, color=None, figsize=(8, 5),
+                                pdf_save_path=None, png_save_path=None):
+    """
+    Box plot of FIHP's switch timestep (when the Fisher-information
+    stopping criterion triggered) vs. MDP depth. Same visual style/x-axis
+    as plot_metric_vs_length(metric="total_time").
+
+    :param results_by_depth_and_approach: {depth: {approach: [result_dict, ...]}}
+        only the FIHP entries are used (standard BAMCP has no stop_info).
+    :param approach: which approach's stop_info to read; defaults to FIHP
+        (Approach.BAMCP_ES), since that's the only one with stop_info.
+    """
+
+    depths, data = _extract_stop_step_by_depth(results_by_depth_and_approach, approach=approach)
+    x_labels = [str(d) for d in depths]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    grouped_boxplot(ax, data, x_labels, [approach], colors=({_approach_key(approach): color} if color else None))
+
+    ax.set_xlabel("MDP depth")
+    ax.set_ylabel(ylabel or "Switch step")
+    if title:
+        ax.set_title(title)
+
+    fig.tight_layout()
+    if pdf_save_path:
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        fig.savefig(png_save_path)
+        print(f"Saved: {png_save_path}")
+    return fig, ax
+
+
+# ============================================================
+# Figure: FIHP human-observation count at switch vs. MDP length
+# ============================================================
+
+def _extract_human_obs_by_depth(results_by_depth_and_approach, approach=Approach.BAMCP_ES):
+    """
+    Like _extract_stop_step_by_depth, but counts only the human-operator
+    steps up to the switch, rather than total environment steps.
+
+    stop_info["stop_step"] counts *every* environment step (human-operator
+    AND autonomous-operator), but the Fisher information -- and therefore
+    the stopping criterion -- only accumulates on steps where the human
+    operator acted. If the policy routes more steps through autonomy at
+    one depth/parameter setting than another, stop_step is inflated for
+    reasons unrelated to how fast information actually accumulates. This
+    reconstructs the "real" count: how many human-operator observations
+    had actually come in by the time FIHP switched.
+
+    Uses is_auto_vec, which is already saved in every result dict
+    (no rerun needed) -- unpack_action() sets is_auto=1 exactly on steps
+    issued to the autonomous operator, so summing (1 - is_auto) up to
+    stop_step gives the human-observation count.
+    """
+    depths = list(results_by_depth_and_approach.keys())
+    data = {approach: []}
+
+    for depth in depths:
+        results_list = results_by_depth_and_approach[depth].get(approach, [])
+        counts, n_skipped = [], 0
+        for r in results_list:
+            stop_info = r.get("stop_info")
+            is_auto_vec = r.get("is_auto")
+            if stop_info is None or is_auto_vec is None or not stop_info.get("stopped_early"):
+                n_skipped += 1
+                continue
+            stop_step = stop_info["stop_step"]
+            human_obs = sum(1 for a in is_auto_vec[:stop_step] if not a)
+            counts.append(human_obs)
+        if n_skipped:
+            print(f"[human_obs] depth={depth}: {n_skipped}/{len(results_list)} "
+                  f"trials skipped (never switched, or missing fields)")
+        data[approach].append(np.array(counts, dtype=float))
+
+    return depths, data
+
+
+def plot_switch_step_vs_human_obs(results_by_depth_and_approach, approach=Approach.BAMCP_ES,
+                                   figsize=(10, 5), pdf_save_path=None, png_save_path=None):
+    """
+    Side-by-side comparison: switch step (total env steps, includes
+    autonomous-operator steps) vs. human observations at switch (the
+    information-relevant count), both grouped by depth, sharing a y-axis
+    scale so you can see directly how much of the depth trend in
+    stop_step survives once autonomous steps are excluded.
+    """
+    depths, step_data = _extract_stop_step_by_depth(results_by_depth_and_approach, approach=approach)
+    _, obs_data = _extract_human_obs_by_depth(results_by_depth_and_approach, approach=approach)
+    x_labels = [str(d) for d in depths]
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize, sharey=True)
+
+    grouped_boxplot(axes[0], step_data, x_labels, [approach])
+    axes[0].set_xlabel("MDP depth")
+    axes[0].set_ylabel("Count")
+    axes[0].set_title("Switch step (total env steps)")
+
+    grouped_boxplot(axes[1], obs_data, x_labels, [approach])
+    axes[1].set_xlabel("MDP depth")
+    axes[1].set_title("Human observations at switch")
+
+    fig.tight_layout()
+    if pdf_save_path:
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        fig.savefig(png_save_path)
+        print(f"Saved: {png_save_path}")
+    return fig, axes
+
+
+
+

@@ -1,5 +1,6 @@
 from domains.uav.uav_domain import UAVDomain
 from domains.uav.utils import get_layouts
+from domains.uav.enums import DomainAction
 from boltzmann_sas.globals import MDP, BAMDP
 from boltzmann_sas.boltzmann_mdp import BoltzmannMDP
 from boltzmann_sas.boltzmann_bamdp import BoltzmannBAMDP
@@ -7,9 +8,9 @@ from operators.context import OperatorContext
 from operators.utils import OperatorType, OperatorParams
 from simulations.approach import Approach
 from simulations.utils import get_results_path, get_operators, get_grid_tag, make_grid
-from simulations.scoring_functions import generate_uav_scoring_function
+from simulations.scoring_functions import generate_progression_biased_uav_scoring_function, generate_random_uav_scoring_function
 from simulations.domain_transitions import build_auto_domain_transitions
-from simulations.runners import run_standard_vi, run_early_stopping_bamcp
+from simulations.runners import run_standard_vi, run_early_stopping_bamcp, run_standard_bamcp
 from algorithms.value_iteration import value_iteration
 from simulations.plotting import plot_reward_and_belief_heatmaps
 
@@ -23,15 +24,33 @@ def build_sas(domain, operator_contexts, model_type):
         return BoltzmannBAMDP(domain, operators)
 
 
-def test_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
+def test_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
         auto_op_contexts, beta_grid, alpha_grid, is_toy, fn_app, grid_tag,
         save_results, n_jobs, debug):
+
+    # # run bamcp
+    results_bamcp = run_standard_bamcp(
+        config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
+        auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
+        save_results=save_results, n_jobs=n_jobs, debug=debug,
+    )
+
+    results_by_approach = {
+        Approach.BAMCP.value: results_bamcp
+    }
+
+    plot_reward_and_belief_heatmaps(results_by_approach, config)
+    
+
+def test_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
+        auto_op_contexts, beta_grid, alpha_grid, is_toy, fn_app, grid_tag,
+        save_results, n_jobs, debug, window=20, tol=0.05, num_trials=0):
     
     # # run early stopping bamcp
     results_es_bamcp = run_early_stopping_bamcp(
         config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
         auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
-        save_results=save_results, n_jobs=n_jobs, debug=debug,
+        save_results=save_results, n_jobs=n_jobs, debug=debug, window=window, tol=tol
     )
 
     results_by_approach = {
@@ -100,17 +119,19 @@ def test_build_domain(size, p_obs):
 
 
 if __name__ == "__main__":
-    size = 18 
+    size = 10 
     p_obs = 0.2
+    manhattan_dist = (size-1)+(size-1)
 
-    true_beta = 10
-    true_alpha = 1
+    true_beta = 2
+    true_alpha = 2
     num_sims = 1
     SEED = 1
-    MAX_DEPTH = 50 
+    MAX_DEPTH = 100*manhattan_dist 
+    num_trials = 0
 
     # belief representation
-    lb_beta, ub_beta = 0, 10
+    lb_beta, ub_beta = 0, 5
     lb_alpha, ub_alpha = 0, 5
     grid_res = 0.1
     beta_grid = make_grid(lb_beta, ub_beta, grid_res)
@@ -127,6 +148,7 @@ if __name__ == "__main__":
         "true_beta": true_beta,
         "true_alpha": true_alpha,
         "num_sims": num_sims,
+        "num_trials": num_trials
     }
 
     # n_jobs=-1 uses all available cores. Drop to e.g. os.cpu_count() - 1
@@ -158,7 +180,7 @@ if __name__ == "__main__":
     domain = UAVDomain(size, p_obs)
     cost_nominals = {a: 0 for a in domain.actions}
 
-    p_success = 0.75 
+    p_success = 0.6 
     fn_app += f"_{p_success}"
     auto_domain_transitions = build_auto_domain_transitions(domain, p_success)
 
@@ -173,10 +195,10 @@ if __name__ == "__main__":
     )
 
 
-    auto_op_contexts = [auto_context]
+    auto_op_contexts = []
 
     # generate nominal human scoring function 
-    Phi_nom = generate_uav_scoring_function(domain)
+    Phi_nom = generate_random_uav_scoring_function(domain)
 
     bhuman1 = OperatorContext(
         category=OperatorType.BHUMAN,
@@ -195,10 +217,13 @@ if __name__ == "__main__":
     #test_vi(domain, operator_contexts)
 
     domain = UAVDomain(size, p_obs)
+    window = 20
+    tol = 0.10
+    fn_app += f"_window{window}_eps{tol}"
 
-    test_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims,
-        auto_op_contexts, beta_grid, alpha_grid, is_toy, fn_app, grid_tag,
-        save_results, n_jobs, debug)
+    test_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims, auto_op_contexts, beta_grid, alpha_grid, is_toy, fn_app, grid_tag, save_results, n_jobs, debug, window=window, tol=tol)
+
+    #test_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, SEED, num_sims, auto_op_contexts, beta_grid, alpha_grid, is_toy, fn_app, grid_tag, save_results, n_jobs, debug)
 
 
     

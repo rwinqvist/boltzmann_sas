@@ -3,6 +3,8 @@ from boltzmann_sas.globals import DEFER
 from bamcp.bamcp import BAMCPSolver
 from bamcp.history import History
 from belief.belief import FreqBelief, JointGridBelief
+from simulations.utils import Approach
+import pandas as pd
 
 def extract_step_records(history):
     """
@@ -143,3 +145,110 @@ if __name__ == "__main__":
     # acc, n = advice_accuracy(results_bamcp, domain)
     # print(f"Advice accuracy: {acc:.2%} (n={n} advice steps)")
     pass
+
+
+def summarize_switch_stats(results_by_depth_and_approach, fihp_approach=Approach.BAMCP_ES,
+                            bamcp_approach=Approach.BAMCP):
+    """
+    Table-friendly summary of FIHP's switch behavior, for reporting in the
+    paper as a table rather than a boxplot (see plot_switch_step_vs_length /
+    plot_human_obs_vs_length for the exploratory distributional versions).
+
+    For each depth, computes across FIHP trials that triggered early
+    stopping:
+      - mean / median switch_step        (total env steps at switch)
+      - mean / median human_obs_at_switch (human-operator steps only,
+        excludes autonomous-operator steps -- see _extract_human_obs_by_depth)
+      - mean / median switch_frac        (switch_step / matched standard-BAMCP
+        total_steps for the same trial index, i.e. same seed/domain
+        realization -- "FIHP switched after X% of the steps plain BAMCP
+        needed to finish the same scenario"). Requires BAMCP and BAMCP_ES to
+        share the sim_seed = seed*10_000 + sim scheme (true for
+        runners.py's current implementation), so trial i of each approach
+        is directly comparable.
+      - n_stopped / n_total              how many trials actually triggered
+        early stopping vs. ran to completion (a low ratio here means most
+        of the "switch" statistics below are based on a small, possibly
+        unrepresentative subset of trials -- worth checking before reading
+        too much into the means)
+
+    :param results_by_depth_and_approach: {depth: {approach: [result_dict, ...]}},
+        the same dict used throughout paper_plots.py. Must contain both
+        fihp_approach and bamcp_approach entries for the fraction column;
+        if bamcp_approach is missing at a depth, switch_frac is left as NaN
+        for that row rather than raising.
+    :return: pandas DataFrame, one row per depth, ready for
+        df.to_latex(...) or df.to_csv(...).
+    """
+    rows = []
+
+    for depth, per_approach in results_by_depth_and_approach.items():
+        fihp_results = per_approach.get(fihp_approach, [])
+        bamcp_results = per_approach.get(bamcp_approach, [])
+        # index-aligned with fihp_results, since both approaches use the
+        # same sim_seed = seed*10_000 + sim scheme for a given sim index
+        bamcp_total_steps = [r.get("total_steps") for r in bamcp_results]
+
+        switch_steps, human_obs, fracs = [], [], []
+        n_total = len(fihp_results)
+        n_stopped = 0
+
+        for i, r in enumerate(fihp_results):
+            stop_info = r.get("stop_info")
+            is_auto_vec = r.get("is_auto")
+            if stop_info is None or not stop_info.get("stopped_early"):
+                continue
+            n_stopped += 1
+
+            stop_step = stop_info["stop_step"]
+            switch_steps.append(stop_step)
+
+            if is_auto_vec is not None:
+                human_obs.append(sum(1 for a in is_auto_vec[:stop_step] if not a))
+
+            if i < len(bamcp_total_steps) and bamcp_total_steps[i]:
+                fracs.append(stop_step / bamcp_total_steps[i])
+
+        def _mean_median(vals):
+            arr = np.asarray(vals, dtype=float)
+            return (np.nan, np.nan) if len(arr) == 0 else (arr.mean(), np.median(arr))
+
+        switch_mean, switch_median = _mean_median(switch_steps)
+        obs_mean, obs_median = _mean_median(human_obs)
+        frac_mean, frac_median = _mean_median(fracs)
+
+        rows.append({
+            "depth": depth,
+            "n_stopped": n_stopped,
+            "n_total": n_total,
+            "switch_step_mean": switch_mean,
+            "switch_step_median": switch_median,
+            "human_obs_mean": obs_mean,
+            "human_obs_median": obs_median,
+            "switch_frac_mean": frac_mean,
+            "switch_frac_median": frac_median,
+        })
+
+    df = pd.DataFrame(rows).sort_values("depth").reset_index(drop=True)
+    return df
+
+
+def summarize_switch_stats_by_beta(results_by_params_and_approach, fihp_approach=Approach.BAMCP_ES,
+                                    bamcp_approach=Approach.BAMCP):
+    """
+    Same as summarize_switch_stats, but grouped by (beta, alpha) setting
+    rather than depth -- use with results_by_params_and_approach
+    ({(beta, alpha): {approach: [...]}}), matching plot_metric_vs_params.
+    """
+    rows = []
+    for (beta, alpha), per_approach in results_by_params_and_approach.items():
+        # reuse the depth-keyed summarizer with a dummy "depth" slot
+        sub = summarize_switch_stats({(beta, alpha): per_approach},
+                                      fihp_approach=fihp_approach, bamcp_approach=bamcp_approach)
+        sub = sub.rename(columns={"depth": "beta_alpha"})
+        sub["beta"] = beta
+        sub["alpha"] = alpha
+        rows.append(sub.drop(columns=["beta_alpha"]))
+
+    df = pd.concat(rows, ignore_index=True).sort_values(["beta", "alpha"]).reset_index(drop=True)
+    return df

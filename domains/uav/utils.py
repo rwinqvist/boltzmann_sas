@@ -27,6 +27,10 @@ def get_or_create_layouts(size, p_obs, num_layouts: int, fn: str):
 
         if layout not in layouts: 
             layouts.append(layout)
+            
+        if p_obs == 0:
+            break
+
 
     joblib.dump(layouts, fn, compress=3)
     return layouts

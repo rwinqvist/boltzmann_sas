@@ -147,7 +147,6 @@ class BAMCP():
             the Q-values and visit counts. Builds a policy. 
         """
 
-        #print("num_trials: ", num_trials)
         if t == 0 and num_trials == 0:
             raise ValueError("A time limit or a number of trials must be provided to run BAMCP.")
 
@@ -184,10 +183,9 @@ class BAMCP():
                         break
     
         if num_trials != 0:
-            #print("search num trials")
+            print(f"searching for {num_trials} trials")
             self.search_num_trials(history, initial_tree_level, parent_node, parent_action, num_trials)
         else:
-            print("search for time!")
             self.search_for_time(history, initial_tree_level, parent_node, parent_action, t)
 
         self.clear_policy()
@@ -410,7 +408,6 @@ class BAMCPSolver():
         self.max_depth = max_depth 
         self.t = t 
         self.num_trials = num_trials 
-        #print("self.num_trials: ", self.num_trials)
         self.objective = objective
         self.max_entropy_rollout = max_entropy_rollout
 
@@ -479,7 +476,7 @@ class BAMCPSolver():
 
         while not self.bamdp.is_goal(state) and not self.bamdp.is_terminal(state) and total_steps < max_steps:
             # plan 
-            #print("\ncurrent state: ", history.last_state)
+            #print("\n", history.last_state)
             
             issued_action = self.get_next_action(history)
             is_advice, is_defer, is_auto = unpack_action(self.bamdp, issued_action)
@@ -672,7 +669,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
 
         while not self.bamdp.is_goal(state) and not self.bamdp.is_terminal(state) and total_steps < max_steps and not stopped:
             # plan 
-            #print("\ncurrent state: ", history.last_state)
+            print("\n", history.last_state)
         
             issued_action = self.get_next_action(history)
             is_advice, is_defer, is_auto = unpack_action(self.bamdp, issued_action)
@@ -680,7 +677,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
             is_defer_vec.append(is_defer)
             is_auto_vec.append(is_auto)
 
-            #print("next issued action: ", issued_action)
+            print("next issued action: ", issued_action)
            # if issued_action[0] == 0:
                 #print("Human")
                 #if issued_action[1] != DEFER:
@@ -690,8 +687,8 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
 
             # execute in real environment
             next_state, reward, executed_action = self.bamdp.step(state, issued_action)
-            #print("executed action: ", executed_action)
-            #print("reward: ", reward)
+            print("executed action: ", executed_action)
+            print("reward: ", reward)
 
             if issued_action[1] != DEFER and executed_action[1] == issued_action[1]:
                 followed_advice.append(1)
