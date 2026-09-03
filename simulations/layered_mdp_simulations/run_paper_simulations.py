@@ -58,15 +58,14 @@ def build_domain_and_contexts(depth, num_actions, p_success, seed, utility_scale
 
     return domain, Phi_nom, cost_nominals, [auto_context]
 
-
 def run_both_bamcp_variants(config, domain, Phi_nom, cost_nominals, auto_op_contexts,
                              true_beta, true_alpha, seed, num_sims, beta_grid, alpha_grid,
-                             window, tol, is_toy, fn_app, grid_tag, save_results, n_jobs, debug):
-    """ Run standard + FIHP for one (depth, true_beta, true_alpha) point. """
+                             window, tol, is_toy, is_cluster, fn_app, grid_tag, save_results, n_jobs, debug, return_results=False):
+    """ Run standard + early-stopping BAMCP for one (depth, true_beta, true_alpha) point. """
     results_bamcp = run_standard_bamcp(
         config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-        auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy,
-        fn_app=fn_app, grid_tag=grid_tag, save_results=save_results, n_jobs=n_jobs, debug=debug,
+        auto_op_contexts, beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, is_cluster=is_cluster,
+        fn_app=fn_app, grid_tag=grid_tag, save_results=save_results, n_jobs=n_jobs, debug=debug, return_results=return_results
     )
 
 
@@ -74,9 +73,13 @@ def run_both_bamcp_variants(config, domain, Phi_nom, cost_nominals, auto_op_cont
     results_bamcp_es = run_early_stopping_bamcp(
         config=config, domain=domain, Phi_nom=Phi_nom, true_beta=true_beta, true_alpha=true_alpha,
         cost_nominals=cost_nominals, seed=seed, num_sims=num_sims, auto_op_contexts=auto_op_contexts,
-        beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, fn_app=es_fn_app, grid_tag=grid_tag,
-        save_results=save_results, n_jobs=n_jobs, debug=debug, window=window, tol=tol
+        beta_grid=beta_grid, alpha_grid=alpha_grid, is_toy=is_toy, is_cluster=is_cluster, fn_app=es_fn_app, grid_tag=grid_tag,
+        save_results=save_results, n_jobs=n_jobs, debug=debug, window=window, tol=tol, return_results=return_results
     )
+
+    if not return_results:
+        return None 
+    
     return {Approach.BAMCP: results_bamcp, Approach.BAMCP_ES: results_bamcp_es}
 
 
@@ -114,6 +117,7 @@ def run_depth_sweep(parameter_pairs):
     save_results = True
     is_toy = False
     debug = False
+    is_cluster = False
     utility_scale=1
     if utility_scale > 1:
         fn_app = f"_uscale{utility_scale}_psuccess{p_success}"
@@ -156,7 +160,7 @@ def run_depth_sweep(parameter_pairs):
                         config=config, domain=domain, Phi_nom=Phi_nom, cost_nominals=cost_nominals,
                         auto_op_contexts=auto_op_contexts, true_beta=true_beta, true_alpha=true_alpha,
                         seed=SEED, num_sims=num_sims, beta_grid=beta_grid, alpha_grid=alpha_grid,
-                        window=window, tol=tol, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag,
+                        window=window, tol=tol, is_toy=is_toy, is_cluster=is_cluster, fn_app=fn_app, grid_tag=grid_tag,
                         save_results=save_results, n_jobs=n_jobs, debug=debug,
                     )
 

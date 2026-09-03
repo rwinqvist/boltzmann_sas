@@ -29,13 +29,18 @@ def check_fn(fn):
     os.makedirs(os.path.dirname(fn), exist_ok=True)
 
 
-def get_results_dir(domain_name, is_toy=False):
-    subfolder = "toy_results" if is_toy else "results"
-    return f"{ROOT_DIR}/simulations/{domain_name}_simulations/{subfolder}"
+def get_results_dir(domain_name, is_toy=False, is_cluster=False):
+    if is_toy: 
+        subfolder = "toy_results"
+    if is_cluster:
+        subfolder = "cluster_results"
+    else:
+        subfolder = "results"
+    return f"{ROOT_DIR}/outputs/{domain_name}_simulations/{subfolder}"
 
 def get_policy_dir(domain_name, is_toy=False):
     subfolder = "toy_policies" if is_toy else ""
-    return f"{ROOT_DIR}/simulations/policies/{domain_name}_policies/{subfolder}"
+    return f"{ROOT_DIR}/outputs/policies/{domain_name}_policies/{subfolder}"
 
 def get_vi_policy_path(domain_name, domain_tag, num_humans, num_autos, true_beta, true_alpha, planning_beta, planning_alpha, seed, is_toy=False, fn_app=""):
     policy_dir = get_policy_dir(domain_name, is_toy)
@@ -46,8 +51,8 @@ def get_vi_policy_path(domain_name, domain_tag, num_humans, num_autos, true_beta
     check_fn(fn)
     return fn
 
-def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, true_beta, true_alpha, seed, sim, config, planning_beta=None, planning_alpha=None, n_warmstart=0, is_toy=False, fn_app="", grid_tag=""):
-    results_dir = get_results_dir(domain_name, is_toy)
+def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, true_beta, true_alpha, seed, sim, config, planning_beta=None, planning_alpha=None, n_warmstart=0, is_toy=False, fn_app="", grid_tag="", is_cluster=False):
+    results_dir = get_results_dir(domain_name, is_toy, is_cluster=is_cluster)
     
     planning_tag = ""
 

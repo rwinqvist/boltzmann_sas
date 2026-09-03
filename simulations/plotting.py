@@ -93,44 +93,51 @@ def plot_belief_heatmap(ax, values, matrix, true_value=None, title=None, ylabel=
  
 
 
-def plot_belief_heatmaps(ax, values, matrix, true_value=None, title=None, ylabel=None, cmap="viridis", vmax=None):
+def plot_belief_heatmaps(ax, values, matrix, true_value=None, title=None, ylabel=None, cmap="viridis",
+                          vmax=None, integer_ticks_only=False, tick_step=None, true_value_label=None):
     """
-    Plot one parameter's belief-over-time heatmap on a given axis.
- 
-    :param vmax: colorbar upper bound. Defaults to this panel's own max value
-        (auto-scaled) rather than a fixed 1.0 — a uniform prior on a fine grid
-        has much lower peak-cell probability than the same confidence on a
-        coarse grid purely from bin count, so a fixed 0-1 scale makes finer
-        grids look artificially less concentrated. Pass an explicit value if
-        you need multiple panels on the same fixed scale for direct comparison.
+    ...(existing docstring)...
+
+    :param tick_step: if set (and integer_ticks_only=True), only label
+        integer values that are multiples of this step (e.g. tick_step=2
+        labels 0, 2, 4, 6, 8, 10 instead of every integer). Ignored if
+        integer_ticks_only=False. Minor (unlabeled) ticks are still placed
+        at every grid value regardless.
     """
     if vmax is None:
         vmax = matrix.max() if matrix.max() > 0 else 1.0
- 
+
     im = ax.imshow(
         matrix, aspect="auto", origin="lower", cmap=cmap, vmin=0.0, vmax=vmax,
         extent=[0, matrix.shape[1], -0.5, len(values) - 0.5],
     )
-    ax.set_yticks(range(len(values)))
-    ax.set_yticklabels(values)
+
+    if integer_ticks_only:
+        step = tick_step or 1
+        int_positions = [i for i, v in enumerate(values)
+                          if float(v).is_integer() and int(v) % step == 0]
+        int_labels = [int(values[i]) for i in int_positions]
+        ax.set_yticks(int_positions)
+        ax.set_yticklabels(int_labels)
+        ax.set_yticks(range(len(values)), minor=True)
+    else:
+        ax.set_yticks(range(len(values)))
+        ax.set_yticklabels(values)
+
     ax.set_xlabel("Step", fontsize=12)
     if ylabel:
         ax.set_ylabel(ylabel, fontsize=12)
     if title:
         ax.set_title(title, fontsize=12)
- 
-    # if true_value is not None and true_value in values:
-    #     row = values.index(true_value)
-    #     ax.axhline(row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
-    #     ax.legend(fontsize=9, loc="upper right")
 
     if true_value is not None:
         lb = values[0]
         res = values[1] - values[0]
         exact_row = (true_value - lb) / res
-        ax.axhline(exact_row, color="red", linestyle="--", linewidth=1.5, label=f"True value={true_value}")
+        label = true_value_label if true_value_label is not None else f"True value={true_value}"
+        ax.axhline(exact_row, color="red", linestyle="--", linewidth=1.5, label=label)
         ax.legend(fontsize=9, loc="upper right")
- 
+
     return im
 
 

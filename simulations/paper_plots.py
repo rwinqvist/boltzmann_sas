@@ -120,7 +120,7 @@ def set_paper_style(base_size=14, use_tex=False):
         "legend.fontsize": base_size - 2,
         "figure.titlesize": base_size + 4,
         "lines.linewidth": 2,
-        "axes.grid": True,
+        #"axes.grid": True,
         "grid.alpha": 0.3,
         "savefig.dpi": 300,
         "savefig.bbox": "tight",
@@ -375,26 +375,8 @@ def plot_metric_vs_params(results_by_params_and_approach, metric="total_reward",
 
 def plot_belief_regime_comparison(regime_results, param_index=ALPHA_INDEX, true_value=None,
                                    opidx=0, belief_key="belief", display_res=None,
-                                   figsize=None, save_path=None, cmap="viridis"):
-    """
-    Side-by-side belief-concentration heatmaps comparing how well a
-    parameter (default: alpha) gets identified across different regimes --
-    typically a low true beta (near-random human, advice barely
-    distinguishable from noise) vs. a high true beta (near-deterministic
-    human, advice only visible when it flips the argmax action).
-
-    :param regime_results: dict (or ordered list of pairs) mapping a
-        regime label -> list of sim result dicts, e.g.
-        {"Low beta (beta=1)": results_low, "High beta (beta=8)": results_high}.
-        Each results_list needs the full `belief_key` history per sim (as
-        produced by BAMCP runs -- NOT the VI results, which have no belief).
-    :param param_index: BETA_INDEX or ALPHA_INDEX -- which marginal to plot.
-    :param true_value: ground-truth value to mark with a dashed reference
-        line. Assumed the same across all regimes (typical if you're
-        varying beta while holding the true alpha fixed, or vice versa) --
-        if your regimes have different true values for this parameter,
-        call plot_belief_heatmaps per-panel yourself instead.
-    """
+                                   figsize=None, pdf_save_path=None, png_save_path=None,
+                                   cmap="viridis", integer_ticks_only=True, true_value_label=None):
     regimes = list(regime_results.items()) if isinstance(regime_results, dict) else list(regime_results)
     n = len(regimes)
     figsize = figsize or (5.5 * n, 4.5)
@@ -403,7 +385,7 @@ def plot_belief_regime_comparison(regime_results, param_index=ALPHA_INDEX, true_
     if n == 1:
         axes = [axes]
 
-    param_name = r"$\beta$" if param_index == BETA_INDEX else r"$\alpha$"
+    param_name = r"$b(\beta)$" if param_index == BETA_INDEX else r"$b(\alpha)$"
     ims = []
 
     for ax, (regime_label, results_list) in zip(axes, regimes):
@@ -414,54 +396,46 @@ def plot_belief_regime_comparison(regime_results, param_index=ALPHA_INDEX, true_
         im = plot_belief_heatmaps(
             ax, values, matrix, true_value=true_value,
             title=regime_label, ylabel=param_name, cmap=cmap,
+            integer_ticks_only=integer_ticks_only, true_value_label=true_value_label,
         )
         ims.append(im)
 
-    fig.colorbar(ims[-1], ax=list(axes), label="P(value)", fraction=0.03, pad=0.02)
+    fig.colorbar(ims[-1], ax=list(axes), fraction=0.03, pad=0.02)
     fig.suptitle(f"{param_name} belief concentration across human-rationality regimes")
 
-    if save_path:
-        fig.savefig(save_path)
-        print(f"Saved: {save_path}")
+    if pdf_save_path:
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        fig.savefig(png_save_path, dpi=150)
+        print(f"Saved: {png_save_path}")
+
     return fig, axes
 
 
 def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
                                         display_res_beta=None, display_res_alpha=None,
                                         share_vmax_per_row=True, figsize=None,
-                                        save_path=None, cmap="viridis"):
+                                        pdf_save_path=None, png_save_path=None,
+                                        cmap="viridis", integer_ticks_only=True,
+                                        hspace=0.15, wspace=0.15, height_ratios=(1, 1)):
     """
-    Two-row belief-concentration comparison across regimes: top row shows
-    the beta marginal, bottom row the alpha marginal, one column per
-    regime. Use this (instead of two separate plot_belief_regime_comparison
-    calls) when identifiability trades off between the two parameters --
-    e.g. beta is well-identified but alpha isn't in one regime, and vice
-    versa in another -- so the reader can see both stories in one figure.
+    ...(existing docstring)...
 
-    :param regimes: ordered list of dicts, each describing one column:
-        {
-            "label": str,                  column title, e.g. "Low beta (beta=1)"
-            "results": [result_dict, ...]  sim results with full belief_key history
-            "true_beta": float,            ground-truth beta for this regime's reference line
-            "true_alpha": float,           ground-truth alpha for this regime's reference line
-        }
-        Each regime carries its own true (beta, alpha) since regimes are
-        usually *defined* by differing true parameter values (e.g. the
-        "low beta" and "high beta" regimes have different true_beta by
-        construction). Omit "true_beta"/"true_alpha" (or set to None) to
-        skip that panel's reference line.
-    :param share_vmax_per_row: if True (default), all beta panels share one
-        colorbar scale and all alpha panels share another, so color
-        intensity is directly comparable panel-to-panel within a row. If
-        False, each panel auto-scales to its own max -- can make a
-        genuinely sharp belief on a fine grid look no more concentrated
-        than a diffuse one on a coarse grid, so only turn this off if all
-        your regimes share the same grid resolution.
+    :param height_ratios: relative height of (beta row, alpha row). Default
+        (2, 1) matches beta's [0,10] grid vs alpha's [0,5] grid, so both
+        rows show the same visual scale (pixels per unit) rather than being
+        stretched to equal height regardless of their actual value range.
+        Adjust if your grid bounds change.
     """
     n = len(regimes)
-    figsize = figsize or (5.5 * n, 8.5)
+    figsize = figsize or (3 * n, 3)
 
-    fig, axes = plt.subplots(2, n, figsize=figsize, squeeze=False)
+    fig, axes = plt.subplots(
+        2, n, figsize=figsize, squeeze=False, sharex=True, sharey='row',
+        gridspec_kw={"height_ratios": list(height_ratios)},
+    )
+    fig.subplots_adjust(hspace=hspace, wspace=wspace)
 
     beta_data, alpha_data = [], []
     for regime in regimes:
@@ -484,32 +458,47 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
     for col, (regime, (beta_values, beta_matrix), (alpha_values, alpha_matrix)) in enumerate(
         zip(regimes, beta_data, alpha_data)
     ):
+        beta_true = regime.get("true_beta")
+        beta_label = fr"$\beta_0={beta_true}$" if beta_true is not None else None
         im_b = plot_belief_heatmaps(
-            axes[0][col], beta_values, beta_matrix, true_value=regime.get("true_beta"),
-            title=regime["label"], ylabel=r"$\beta$", cmap=cmap, vmax=beta_vmax,
+        axes[0][col], beta_values, beta_matrix, true_value=beta_true,
+        title=regime["label"], ylabel=r"$b(\beta)$" if col == 0 else None,
+        cmap=cmap, vmax=beta_vmax,
+        integer_ticks_only=integer_ticks_only, tick_step=2, true_value_label=beta_label,
         )
-        axes[0][col].set_xlabel("")  # avoid a redundant "Step" label between the two rows
+        axes[0][col].set_xlabel("")
         beta_ims.append(im_b)
 
+        alpha_true = regime.get("true_alpha")
+        alpha_label = fr"$\alpha_0={alpha_true}$" if alpha_true is not None else None
         im_a = plot_belief_heatmaps(
-            axes[1][col], alpha_values, alpha_matrix, true_value=regime.get("true_alpha"),
-            title=None, ylabel=r"$\alpha$", cmap=cmap, vmax=alpha_vmax,
+            axes[1][col], alpha_values, alpha_matrix, true_value=alpha_true,
+            title=None, ylabel=r"$b(\alpha)$" if col == 0 else None,
+            cmap=cmap, vmax=alpha_vmax,
+            integer_ticks_only=integer_ticks_only, true_value_label=alpha_label,
         )
+        axes[1][col].set_xlabel("")  # suppress per-panel label; one shared label added below instead
         alpha_ims.append(im_a)
 
-    fig.colorbar(beta_ims[-1], ax=list(axes[0]), label="P(value)", fraction=0.03, pad=0.02)
-    fig.colorbar(alpha_ims[-1], ax=list(axes[1]), label="P(value)", fraction=0.03, pad=0.02)
+    #fig.colorbar(beta_ims[-1], ax=list(axes[0]), fraction=0.03, pad=0.02)
+    #fig.colorbar(alpha_ims[-1], ax=list(axes[1]), fraction=0.03, pad=0.02)
+    fig.colorbar(beta_ims[-1], ax=list(axes[0]), fraction=0.025, pad=0.015)
+    fig.colorbar(alpha_ims[-1], ax=list(axes[1]), fraction=0.025, pad=0.015)
 
-    fig.suptitle(r"$\beta$ and $\alpha$ belief concentration across regimes")
+    for col in range(n):
+        axes[1][col].tick_params(axis='x', rotation=30)
 
-    if save_path:
-        fig.savefig(save_path)
-        print(f"Saved: {save_path}")
+    fig.supxlabel("Step", fontsize=12, y=-0.05)  # one centered label for the whole figure instead
+    #fig.suptitle(r"$\beta$ and $\alpha$ belief concentration across regimes")
+
+    if pdf_save_path:
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        fig.savefig(png_save_path, dpi=150)
+        print(f"Saved: {png_save_path}")
+
     return fig, axes
-
-
-
-
 # ============================================================
 # Figure: FIHP switch step vs. MDP length
 # ============================================================
@@ -659,5 +648,60 @@ def plot_switch_step_vs_human_obs(results_by_depth_and_approach, approach=Approa
     return fig, axes
 
 
+def plot_reward_and_time_combined_boxplot(flat_results, depths, pdf_save_path=None, png_save_path=None,
+                                           colors=None, figsize=(8, 4)):
+    fig, (ax_reward, ax_time) = plt.subplots(1, 2, figsize=figsize, sharex=False)
+    fig.subplots_adjust(wspace=0.02)  # push panels together
 
+    ...  # unchanged boxplot-drawing code
+
+    # move the time panel's y-axis to the right side, so it reads left-to-right
+    # as "reward axis | shared plot area | time axis" rather than two separate boxes
+    ax_time.yaxis.tick_right()
+    ax_time.yaxis.set_label_position("right")
+
+    default_colors = {Approach.BAMCP: "steelblue", Approach.BAMCP_ES: "darkorange"}
+    colors = colors or default_colors
+    labels = {Approach.BAMCP: "BAMCP", Approach.BAMCP_ES: "FIHP"}
+    approaches = [Approach.BAMCP, Approach.BAMCP_ES]
+
+    reward_data = {a: [] for a in approaches}
+    time_data = {a: [] for a in approaches}
+    for d in depths:
+        for a in approaches:
+            reward_data[a].append(np.array([r["total_reward"] for r in flat_results[d][a]]))
+            time_data[a].append(np.array([r["total_time"] for r in flat_results[d][a]]))
+
+    x_labels = [str(d) for d in depths]
+    grouped_boxplot(ax_reward, reward_data, x_labels, approaches,
+                     colors={a.value: colors[a] for a in approaches})
+    grouped_boxplot(ax_time, time_data, x_labels, approaches,
+                     colors={a.value: colors[a] for a in approaches})
+
+    #ax_reward.set_title("Reward")
+    ax_reward.set_ylabel("Total reward")
+    #ax_time.set_title("Wall-clock time")
+    ax_time.set_ylabel("Wall-clock time (s)")
+
+    for ax in (ax_reward, ax_time):
+        ax.set_xlabel("")  # suppress per-panel label -- shared label added below instead
+        ax.grid(alpha=0.3, axis="y")
+        ax.get_legend().remove() if ax.get_legend() else None  # remove any per-panel legend
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=colors[a]) for a in approaches]
+    fig.legend(handles, [labels[a] for a in approaches], loc="upper center",
+               ncol=2, bbox_to_anchor=(0.5, 1), frameon=True)
+
+    fig.supxlabel("DAG depth", fontsize=12, y=0.12)
+    #fig.tight_layout(rect=[0, 0, 1, 0.92])
+    fig.subplots_adjust(bottom=0.25)  # leave more space for shared xlabel
+    fig.subplots_adjust(wspace=0)  # small horizontal spacing
+
+    if pdf_save_path:
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        fig.savefig(png_save_path, dpi=150)
+        print(f"Saved: {png_save_path}")
+    return fig, (ax_reward, ax_time)
 

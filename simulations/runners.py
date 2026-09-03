@@ -66,7 +66,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
 
 
 def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False):
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, return_results=False):
     print("\nApproach: Standard BAMCP")
 
     if debug: 
@@ -102,15 +102,14 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
     #print("remove this exit!!!")
     #exit()
 
-    if save_results:
-        all_results = load_all_sims(
+    if not return_results:
+        return None
+
+    all_results = load_all_sims(
             domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP,
             true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
             num_autos=len(auto_op_contexts), is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config,
         )
-    else:
-        all_results = None
-
     return all_results
 
 
@@ -149,7 +148,7 @@ def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_co
 
 
 def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, window=20, tol=0.05):
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, window=20, tol=0.05, return_results=False):
     print("\nApproach: FIHP")
 
     if debug: 
@@ -182,6 +181,10 @@ def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cos
         for sim in range(num_sims)
     )
 
+    if not return_results:
+        return None 
+
+    
     all_results = load_all_sims(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, approach=Approach.BAMCP_ES,
         true_beta=true_beta, true_alpha=true_alpha, seed=seed, num_sims=num_sims,
