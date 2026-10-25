@@ -51,7 +51,7 @@ def get_vi_policy_path(domain_name, domain_tag, num_humans, num_autos, true_beta
     check_fn(fn)
     return fn
 
-def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, true_beta, true_alpha, seed, sim, config, planning_beta=None, planning_alpha=None, n_warmstart=0, is_toy=False, fn_app="", grid_tag="", is_cluster=False):
+def get_results_path(domain_name, domain_tag, num_humans, num_autos, approach, true_beta, true_alpha, seed, sim, config, planning_beta=None, planning_alpha=None, n_warmstart=0, is_toy=False, is_cluster=False, fn_app="", grid_tag=""):
     results_dir = get_results_dir(domain_name, is_toy, is_cluster=is_cluster)
     
     planning_tag = ""

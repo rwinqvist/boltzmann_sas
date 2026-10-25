@@ -45,7 +45,21 @@ def load_raw_sims(depth, beta, alpha, approach, layout_idx, sims=range(1, 2)):
 
 
 def plot_beliefs(paper_plots_dir, presentation_plots_dir, tag, depth=150, layout_idx=0, sims=range(1, 2),
-                  approach=Approach.BAMCP, param_index=ALPHA_INDEX, true_value=1.2):
+                  approach=Approach.BAMCP, param_index=ALPHA_INDEX, true_value=None):
+    if true_value is None:
+        # PARAM_PAIRS varies the other axis across regimes (e.g. beta =
+        # 0.5/1.5/5.0) while holding this one fixed -- pull that fixed
+        # value out instead of hardcoding it.
+        axis_pos = 1 if param_index == ALPHA_INDEX else 0
+        values = {pair[axis_pos] for pair in PARAM_PAIRS}
+        if len(values) != 1:
+            raise ValueError(
+                f"PARAM_PAIRS doesn't hold a single value fixed on the "
+                f"{'alpha' if param_index == ALPHA_INDEX else 'beta'} axis "
+                "-- pass true_value explicitly."
+            )
+        true_value = values.pop()
+        
     regime_results = {}
     for true_beta, true_alpha in PARAM_PAIRS:
         results = load_raw_sims(depth, true_beta, true_alpha, approach, layout_idx, sims=sims)

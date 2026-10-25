@@ -479,7 +479,7 @@ class BAMCPSolver():
 
         while not self.bamdp.is_goal(state) and not self.bamdp.is_terminal(state) and total_steps < max_steps:
             # plan 
-            #print("\ncurrent state: ", history.last_state)
+            print("\ncurrent state: ", history.last_state)
             
             issued_action = self.get_next_action(history)
             is_advice, is_defer, is_auto = unpack_action(self.bamdp, issued_action)
@@ -598,7 +598,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
         predicted_change = -slope*window/intercept
 
         # REMEMBER TO CHANGE THE WINDOW LENGTH 
-        #print("predicted change: ", predicted_change)
+        print("predicted change: ", predicted_change)
         return abs(predicted_change) < tol
     
     def check_stopping_criterion(self, acc_fisher_information, window=20, tol=0.05):
@@ -672,7 +672,7 @@ class EarlyStoppingBAMCPSolver(BAMCPSolver):
 
         while not self.bamdp.is_goal(state) and not self.bamdp.is_terminal(state) and total_steps < max_steps and not stopped:
             # plan 
-            #print("\ncurrent state: ", history.last_state)
+            print("\ncurrent state: ", history.last_state)
         
             issued_action = self.get_next_action(history)
             is_advice, is_defer, is_auto = unpack_action(self.bamdp, issued_action)

@@ -1,7 +1,11 @@
 import numpy as np 
 import math 
 from copy import deepcopy
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+# uncomment for LCSS
+#mpl.rcParams['pdf.fonttype'] = 42
+#mpl.rcParams['ps.fonttype'] = 42
 
 
 """

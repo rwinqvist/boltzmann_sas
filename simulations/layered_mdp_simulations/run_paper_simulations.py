@@ -327,7 +327,7 @@ if __name__ == "__main__":
     parameter_pairs = [(0.5, 1.2), (1, 1.2), (1.5, 1.2), (2, 1.2), (2.5, 1.2), (3, 1.2), (3.5, 1.2), (4, 1.2), (4.5, 1.2), (5,1.2)]
     #parameter_pairs = [(0.5, 1.2), (5, 1.2)]
     #parameter_pairs = [(0.5, 1.2), (5, 1.2)]
-    parameter_pairs = [(0.5, 1.2), (1.5, 1.2), (5,1.2)]
+    parameter_pairs = [(0.05, 1.2), (0.5, 1.2), (1.5, 1.2), (5,1.2)]
     #parameter_pairs = [(0.5, 1.2)]
     run_depth_sweep(parameter_pairs)
     #run_params_sweep(parameter_pairs)

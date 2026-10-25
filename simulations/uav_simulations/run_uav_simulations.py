@@ -127,7 +127,7 @@ def main():
     is_cluster = cfg.is_cluster
     debug = False
 
-    base_fn_app = cfg.base_fn_app
+    base_fn_app = cfg.build_base_fn_app(num_trials=num_trials, num_sims=num_sims)
 
     log(f"Starting UAV sweep: size={size} p_obs={p_obs} restrict_to_forward={restrict_to_forward} "
         f"parameter_pairs={parameter_pairs} num_layouts={num_layouts} num_trials={num_trials}")

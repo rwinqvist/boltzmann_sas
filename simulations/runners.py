@@ -36,7 +36,7 @@ def build_sas(domain, operator_contexts, model_type):
 # ============================================================
 
 def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results):
+                            true_beta, true_alpha, seed, is_toy, is_cluster, fn_app, grid_tag, save_results):
     """ Runs a single standard-BAMCP simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
@@ -46,7 +46,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, is_cluster=is_cluster, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
     #print("fn: ", fn)
     if os.path.exists(fn):
@@ -66,7 +66,7 @@ def _run_std_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, con
 
 
 def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, return_results=False):
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, is_cluster=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, return_results=False):
     print("\nApproach: Standard BAMCP")
 
     if debug: 
@@ -94,7 +94,7 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_std_bamcp_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results
+            true_beta, true_alpha, seed, is_toy, is_cluster, fn_app, grid_tag, save_results
         )
         for sim in range(num_sims)
     )
@@ -119,7 +119,7 @@ def run_standard_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nomi
 # ============================================================
 
 def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_contexts, config,
-                            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results, window=20, tol=0.05):
+                            true_beta, true_alpha, seed, is_toy, is_cluster, fn_app, grid_tag, save_results, window=20, tol=0.05):
     """ Runs a single standard-BAMCP simulation. Top-level (picklable) for joblib/loky. """
     sim_seed = seed * 10_000 + sim
     random.seed(sim_seed)
@@ -129,7 +129,7 @@ def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_co
     fn = get_results_path(
         domain_name=domain.domain_name, domain_tag=domain.id_tag, num_humans=1,
         num_autos=len(auto_op_contexts), approach=Approach.BAMCP_ES,
-        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, fn_app=fn_app, grid_tag=grid_tag, config=config
+        true_beta=true_beta, true_alpha=true_alpha, seed=seed, sim=sim + 1, is_toy=is_toy, is_cluster=is_cluster, fn_app=fn_app, grid_tag=grid_tag, config=config
     )
     if os.path.exists(fn):
         #print("Results already exist!")
@@ -148,7 +148,7 @@ def _run_early_stopping_bamcp_one_sim(sim, domain, operator_contexts, auto_op_co
 
 
 def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cost_nominals, seed, num_sims,
-                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, window=20, tol=0.05, return_results=False):
+                        auto_op_contexts, beta_grid, alpha_grid, is_toy=False, is_cluster=False, fn_app="", grid_tag="", save_results=True, n_jobs=-1, debug=False, window=20, tol=0.05, return_results=False):
     print("\nApproach: FIHP")
 
     if debug: 
@@ -176,7 +176,7 @@ def run_early_stopping_bamcp(config, domain, Phi_nom, true_beta, true_alpha, cos
     Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(_run_early_stopping_bamcp_one_sim)(
             sim, domain, operator_contexts, auto_op_contexts, config,
-            true_beta, true_alpha, seed, is_toy, fn_app, grid_tag, save_results, window=window, tol=tol
+            true_beta, true_alpha, seed, is_toy, is_cluster, fn_app, grid_tag, save_results, window=window, tol=tol
         )
         for sim in range(num_sims)
     )

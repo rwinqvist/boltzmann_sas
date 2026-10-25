@@ -40,7 +40,7 @@ class UAVDomain(object):
     TERRAIN = [TerrainType.NOM.value, TerrainType.OBSTACLE.value, TerrainType.START.value, TerrainType.GOAL.value]
 
 
-    def __init__(self, size=3, p_obs=0.4, grid_map=None, map_name="", p_success=None):
+    def __init__(self, size=3, p_obs=0.4, grid_map=None, map_name="", p_success=None, restrict_to_forward=False):
         self.domain_name = "uav"
         self.size = size 
         self.p_obs = p_obs 
@@ -148,7 +148,7 @@ class UAVDomain(object):
         return False
 
     @classmethod
-    def from_map(cls, size, p_obs, layout):
+    def from_map(cls, size, p_obs, layout, restrict_to_forward=False):
         uav_domain = cls(size, p_obs=p_obs, grid_map=layout)
         return uav_domain
 

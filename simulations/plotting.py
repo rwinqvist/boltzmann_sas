@@ -1,5 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+# uncomment for LCSS
+#mpl.rcParams['pdf.fonttype'] = 42
+#mpl.rcParams['ps.fonttype'] = 42
 from simulations.approach import Approach
 
 BETA_INDEX = 0
@@ -71,11 +75,11 @@ def plot_belief_heatmap(ax, values, matrix, true_value=None, title=None, ylabel=
     )
     ax.set_yticks(range(len(values)))
     ax.set_yticklabels(values)
-    ax.set_xlabel("Step", fontsize=12)
+    ax.set_xlabel("Step")
     if ylabel:
-        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_ylabel(ylabel)
     if title:
-        ax.set_title(title, fontsize=12)
+        ax.set_title(title)
  
     # if true_value is not None and true_value in values:
     #     row = values.index(true_value)
@@ -124,18 +128,18 @@ def plot_belief_heatmaps(ax, values, matrix, true_value=None, title=None, ylabel
         ax.set_yticks(range(len(values)))
         ax.set_yticklabels(values)
 
-    ax.set_xlabel("Step", fontsize=12)
+    ax.set_xlabel("Step")
     if ylabel:
-        ax.set_ylabel(ylabel, fontsize=12)
+        ax.set_ylabel(ylabel)
     if title:
-        ax.set_title(title, fontsize=12)
+        ax.set_title(title)
 
     if true_value is not None:
         lb = values[0]
         res = values[1] - values[0]
         exact_row = (true_value - lb) / res
         label = true_value_label if true_value_label is not None else f"True value={true_value}"
-        ax.axhline(exact_row, color="red", linestyle="--", linewidth=1.5, label=label)
+        ax.axhline(exact_row, color="red", linestyle="--", linewidth=1.25, label=label)
         ax.legend(fontsize=9, loc="upper right")
 
     return im
@@ -192,15 +196,15 @@ def plot_reward_and_belief_heatmaps(results_by_approach, config, opidx=0, belief
         axes[0][1].plot(x, advice_series.mean(axis=0), color=color, linestyle="--", linewidth=2, label=f"{label} (ADVICE)")
         axes[0][1].plot(x, auto_series.mean(axis=0), color=color, linestyle=":", linewidth=2, label=f"{label} (AUTO)")
  
-    axes[0][0].set_xlabel("Step", fontsize=12)
-    axes[0][0].set_ylabel("Cumulative reward", fontsize=12)
-    axes[0][0].set_title("Cumulative reward", fontsize=12)
+    axes[0][0].set_xlabel("Step")
+    axes[0][0].set_ylabel("Cumulative reward")
+    axes[0][0].set_title("Cumulative reward")
     axes[0][0].legend(fontsize=10)
     axes[0][0].grid(alpha=0.3)
  
-    axes[0][1].set_xlabel("Step", fontsize=12)
-    axes[0][1].set_ylabel("Rate", fontsize=12)
-    axes[0][1].set_title("DEFER / ADVICE / AUTO rate over steps", fontsize=12)
+    axes[0][1].set_xlabel("Step")
+    axes[0][1].set_ylabel("Rate")
+    axes[0][1].set_title("DEFER / ADVICE / AUTO rate over steps")
     axes[0][1].legend(fontsize=8, ncol=1)
     axes[0][1].grid(alpha=0.3)
     axes[0][1].set_ylim(-0.05, 1.05)
@@ -294,15 +298,15 @@ def plot_final_reward_time_and_belief_heatmaps(results_by_approach, config, opid
     axes[0][0].bar(x, reward_means, yerr=reward_stds, color=bar_colors, capsize=5)
     axes[0][0].set_xticks(x)
     axes[0][0].set_xticklabels(labels, rotation=20, ha="right")
-    axes[0][0].set_ylabel("Final total reward", fontsize=12)
-    axes[0][0].set_title("Final total reward (mean \u00b1 std across sims)", fontsize=12)
+    axes[0][0].set_ylabel("Final total reward")
+    axes[0][0].set_title("Final total reward (mean \u00b1 std across sims)")
     axes[0][0].grid(alpha=0.3, axis="y")
 
     axes[0][1].bar(x, time_means, yerr=time_stds, color=bar_colors, capsize=5)
     axes[0][1].set_xticks(x)
     axes[0][1].set_xticklabels(labels, rotation=20, ha="right")
-    axes[0][1].set_ylabel("Total time (s)", fontsize=12)
-    axes[0][1].set_title("Total wall-clock time (mean \u00b1 std across sims)", fontsize=12)
+    axes[0][1].set_ylabel("Total time (s)")
+    axes[0][1].set_title("Total wall-clock time (mean \u00b1 std across sims)")
     axes[0][1].grid(alpha=0.3, axis="y")
 
     # --- rows 1..n: per-approach belief heatmaps (belief-tracking approaches only) ---
@@ -459,31 +463,31 @@ def plot_results(results_by_approach, config, n_warmstart, colors=None, labels=N
         plot_mean_std(axes[3], defer_series, label, color, plot_std=False)
 
     # --- formatting ---
-    axes[0].set_xlabel("Step", fontsize=12)
-    axes[0].set_ylabel("Cumulative reward", fontsize=12)
-    axes[0].set_title("Cumulative reward", fontsize=12)
+    axes[0].set_xlabel("Step")
+    axes[0].set_ylabel("Cumulative reward")
+    axes[0].set_title("Cumulative reward")
     axes[0].legend(fontsize=10)
     axes[0].grid(alpha=0.3)
 
     axes[1].axhline(true_beta, color="black", linestyle="--", linewidth=1.5, label=f"True β={true_beta}")
-    axes[1].set_xlabel("Step", fontsize=12)
-    axes[1].set_ylabel("β estimate", fontsize=12)
-    axes[1].set_title("β belief mean", fontsize=12)
+    axes[1].set_xlabel("Step")
+    axes[1].set_ylabel("β estimate")
+    axes[1].set_title("β belief mean")
     axes[1].legend(fontsize=10)
     axes[1].grid(alpha=0.3)
 
     axes[2].axhline(true_alpha, color="black", linestyle="--", linewidth=1.5, label=f"True α={true_alpha}")
-    axes[2].set_xlabel("Step", fontsize=12)
-    axes[2].set_ylabel("α estimate", fontsize=12)
-    axes[2].set_title("α belief mean", fontsize=12)
+    axes[2].set_xlabel("Step")
+    axes[2].set_ylabel("α estimate")
+    axes[2].set_title("α belief mean")
     axes[2].legend(fontsize=10)
     axes[2].grid(alpha=0.3)
 
     if n_warmstart > 0:
         axes[3].axvline(n_warmstart, color="darkorange", linestyle=":", linewidth=1.5, label="Warm-start end")
-    axes[3].set_xlabel("Step", fontsize=12)
-    axes[3].set_ylabel("DEFER rate", fontsize=12)
-    axes[3].set_title("DEFER rate over steps", fontsize=12)
+    axes[3].set_xlabel("Step")
+    axes[3].set_ylabel("DEFER rate")
+    axes[3].set_title("DEFER rate over steps")
     axes[3].legend(fontsize=10)
     axes[3].grid(alpha=0.3)
     axes[3].set_ylim(-0.05, 1.05)
@@ -549,23 +553,23 @@ def plot_results_with_error(results_by_approach, config, n_warmstart, colors=Non
         defer_series = pad_and_stack([r["is_defer"] for r in results_list])
         plot_mean_std(axes[4], defer_series, label, color)
 
-    axes[0].set_xlabel("Step", fontsize=12)
-    axes[0].set_ylabel("Cumulative reward", fontsize=12)
-    axes[0].set_title("Cumulative reward", fontsize=12)
+    axes[0].set_xlabel("Step")
+    axes[0].set_ylabel("Cumulative reward")
+    axes[0].set_title("Cumulative reward")
     axes[0].legend(fontsize=10)
     axes[0].grid(alpha=0.3)
 
     axes[1].axhline(true_beta, color="black", linestyle="--", linewidth=1.5, label=f"True β={true_beta}")
-    axes[1].set_xlabel("Step", fontsize=12)
-    axes[1].set_ylabel("β estimate", fontsize=12)
-    axes[1].set_title("β belief mean", fontsize=12)
+    axes[1].set_xlabel("Step")
+    axes[1].set_ylabel("β estimate")
+    axes[1].set_title("β belief mean")
     axes[1].legend(fontsize=10)
     axes[1].grid(alpha=0.3)
 
     axes[2].axhline(0, color="black", linestyle="--", linewidth=1.5, label="Zero error")
-    axes[2].set_xlabel("Step", fontsize=12)
-    axes[2].set_ylabel("|β_hat - β_true|", fontsize=12)
-    axes[2].set_title("β absolute error", fontsize=12)
+    axes[2].set_xlabel("Step")
+    axes[2].set_ylabel("|β_hat - β_true|")
+    axes[2].set_title("β absolute error")
     axes[2].legend(fontsize=10)
     axes[2].grid(alpha=0.3)
     if n_warmstart > 0:
@@ -573,17 +577,17 @@ def plot_results_with_error(results_by_approach, config, n_warmstart, colors=Non
         axes[2].legend(fontsize=10)
 
     axes[3].axhline(true_alpha, color="black", linestyle="--", linewidth=1.5, label=f"True α={true_alpha}")
-    axes[3].set_xlabel("Step", fontsize=12)
-    axes[3].set_ylabel("α estimate", fontsize=12)
-    axes[3].set_title("α belief mean", fontsize=12)
+    axes[3].set_xlabel("Step")
+    axes[3].set_ylabel("α estimate")
+    axes[3].set_title("α belief mean")
     axes[3].legend(fontsize=10)
     axes[3].grid(alpha=0.3)
 
     if n_warmstart > 0:
         axes[4].axvline(n_warmstart, color="darkorange", linestyle=":", linewidth=1.5, label="Warm-start end")
-    axes[4].set_xlabel("Step", fontsize=12)
-    axes[4].set_ylabel("DEFER rate", fontsize=12)
-    axes[4].set_title("DEFER rate over steps", fontsize=12)
+    axes[4].set_xlabel("Step")
+    axes[4].set_ylabel("DEFER rate")
+    axes[4].set_title("DEFER rate over steps")
     axes[4].legend(fontsize=10)
     axes[4].grid(alpha=0.3)
     axes[4].set_ylim(-0.05, 1.05)

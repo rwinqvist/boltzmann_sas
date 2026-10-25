@@ -80,7 +80,11 @@ Usage sketch (fill in with your actual sweep):
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from matplotlib.patches import Patch
+# uncomment for LCSS
+#mpl.rcParams['pdf.fonttype'] = 42
+#mpl.rcParams['ps.fonttype'] = 42
 
 from simulations.plotting import (
     BETA_INDEX, ALPHA_INDEX,
@@ -92,7 +96,7 @@ from simulations.plotting import (
 # Style
 # ============================================================
 
-def set_paper_style(base_size=14, use_tex=False):
+def set_paper_style(base_size=18, use_tex=False):
     """
     Set matplotlib rcParams for paper/thesis-quality figures: LaTeX
     (Computer Modern) rendering and a larger base font size than
@@ -114,10 +118,10 @@ def set_paper_style(base_size=14, use_tex=False):
         "font.family": "serif",
         "font.size": base_size,
         "axes.titlesize": base_size + 2,
-        "axes.labelsize": base_size,
-        "xtick.labelsize": base_size - 2,
-        "ytick.labelsize": base_size - 2,
-        "legend.fontsize": base_size - 2,
+        "axes.labelsize": base_size + 2,
+        "xtick.labelsize": base_size,
+        "ytick.labelsize": base_size,
+        "legend.fontsize": base_size,
         "figure.titlesize": base_size + 4,
         "lines.linewidth": 2,
         #"axes.grid": True,
@@ -179,7 +183,7 @@ def _approach_key(approach):
 
 
 def grouped_boxplot(ax, data, x_labels, approaches, colors=None, labels=None,
-                     group_gap=0.15, showfliers=False):
+                     group_gap=0.15, showfliers=False, width_scale=1):
     """
     Draw a grouped ("clustered") box plot: one cluster of boxes per
     x-position, one box per approach within each cluster, colored by
@@ -213,7 +217,7 @@ def grouped_boxplot(ax, data, x_labels, approaches, colors=None, labels=None,
 
     n_groups = len(approaches)
     n_x = len(x_labels)
-    box_width = (1.0 - group_gap) / n_groups
+    box_width = width_scale*(1.0 - group_gap) / n_groups
 
     x_positions = np.arange(n_x)
 
@@ -385,7 +389,7 @@ def plot_belief_regime_comparison(regime_results, param_index=ALPHA_INDEX, true_
     if n == 1:
         axes = [axes]
 
-    param_name = r"$b(\beta)$" if param_index == BETA_INDEX else r"$b(\alpha)$"
+    param_name = r"$P_t(\beta)$" if param_index == BETA_INDEX else r"$P_t(\alpha)$"
     ims = []
 
     for ax, (regime_label, results_list) in zip(axes, regimes):
@@ -418,7 +422,7 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
                                         share_vmax_per_row=True, figsize=None,
                                         pdf_save_path=None, png_save_path=None,
                                         cmap="viridis", integer_ticks_only=True,
-                                        hspace=0.15, wspace=0.15, height_ratios=(1, 1)):
+                                        hspace=0.2, wspace=0.15, height_ratios=(1, 1)):
     """
     ...(existing docstring)...
 
@@ -429,7 +433,8 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
         Adjust if your grid bounds change.
     """
     n = len(regimes)
-    figsize = figsize or (3 * n, 3)
+    #figsize = figsize or (2 * n, 3)
+    figsize = figsize or (3 * n, 5)
 
     fig, axes = plt.subplots(
         2, n, figsize=figsize, squeeze=False, sharex=True, sharey='row',
@@ -462,7 +467,7 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
         beta_label = fr"$\beta_0={beta_true}$" if beta_true is not None else None
         im_b = plot_belief_heatmaps(
         axes[0][col], beta_values, beta_matrix, true_value=beta_true,
-        title=regime["label"], ylabel=r"$b(\beta)$" if col == 0 else None,
+        title=regime["label"], ylabel=r"$\beta$" if col == 0 else None,
         cmap=cmap, vmax=beta_vmax,
         integer_ticks_only=integer_ticks_only, tick_step=2, true_value_label=beta_label,
         )
@@ -473,7 +478,7 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
         alpha_label = fr"$\alpha_0={alpha_true}$" if alpha_true is not None else None
         im_a = plot_belief_heatmaps(
             axes[1][col], alpha_values, alpha_matrix, true_value=alpha_true,
-            title=None, ylabel=r"$b(\alpha)$" if col == 0 else None,
+            title=None, ylabel=r"$\alpha$" if col == 0 else None,
             cmap=cmap, vmax=alpha_vmax,
             integer_ticks_only=integer_ticks_only, true_value_label=alpha_label,
         )
@@ -482,13 +487,14 @@ def plot_belief_regime_comparison_both(regimes, opidx=0, belief_key="belief",
 
     #fig.colorbar(beta_ims[-1], ax=list(axes[0]), fraction=0.03, pad=0.02)
     #fig.colorbar(alpha_ims[-1], ax=list(axes[1]), fraction=0.03, pad=0.02)
-    fig.colorbar(beta_ims[-1], ax=list(axes[0]), fraction=0.025, pad=0.015)
-    fig.colorbar(alpha_ims[-1], ax=list(axes[1]), fraction=0.025, pad=0.015)
+    fig.colorbar(beta_ims[-1], ax=list(axes[0]), fraction=0.025, pad=0.015, label=r"$P_t(\beta)$")
+    fig.colorbar(alpha_ims[-1], ax=list(axes[1]), fraction=0.025, pad=0.015, label=r"$P_t(\alpha)$")
 
     for col in range(n):
         axes[1][col].tick_params(axis='x', rotation=30)
+        #axes[1][col].tick_params(axis='x')
 
-    fig.supxlabel("Step", fontsize=12, y=-0.05)  # one centered label for the whole figure instead
+    fig.supxlabel(r"Step $t$", y=-0.01)  # one centered label for the whole figure instead
     #fig.suptitle(r"$\beta$ and $\alpha$ belief concentration across regimes")
 
     if pdf_save_path:
@@ -692,7 +698,7 @@ def plot_reward_and_time_combined_boxplot(flat_results, depths, pdf_save_path=No
     fig.legend(handles, [labels[a] for a in approaches], loc="upper center",
                ncol=2, bbox_to_anchor=(0.5, 1), frameon=True)
 
-    fig.supxlabel("DAG depth", fontsize=12, y=0.12)
+    fig.supxlabel("DAG depth", y=0.12)
     #fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.subplots_adjust(bottom=0.25)  # leave more space for shared xlabel
     fig.subplots_adjust(wspace=0)  # small horizontal spacing
@@ -705,3 +711,86 @@ def plot_reward_and_time_combined_boxplot(flat_results, depths, pdf_save_path=No
         print(f"Saved: {png_save_path}")
     return fig, (ax_reward, ax_time)
 
+
+
+def plot_reward_time_combined_stacked(results_by_params_and_depth_and_approach, param_pairs, depths=None,
+                                       pdf_save_path=None, png_save_path=None, colors=None, figsize=None):
+    """
+    2-row x n-column layout: top row = reward boxplots, bottom row = wall-
+    clock time boxplots, one column per (beta, alpha) setting, sharing
+    depth on the x-axis. Each column's true (beta, alpha) is shown as a
+    title above its top-row panel (matching the column-title style of
+    plot_belief_regime_comparison_both), instead of a per-row annotation
+    box -- only the leftmost column gets a y-axis label per row.
+
+    :param results_by_params_and_depth_and_approach: {(beta, alpha): {depth: {approach: [result_dict, ...]}}}
+    :param param_pairs: ordered list of (beta, alpha) tuples -- one column each, left to right
+    :param depths: x-axis depths, shared across all columns. If None, inferred
+        as the sorted union of depths present across all param settings.
+    """
+    if depths is None:
+        depths = sorted({d for flat in results_by_params_and_depth_and_approach.values() for d in flat.keys()})
+
+    n_cols = len(param_pairs)
+    figsize = figsize or (3 * n_cols, 5)
+    fig, axes = plt.subplots(2, n_cols, figsize=figsize, sharex='col', sharey='row')
+    if n_cols == 1:
+        axes = axes[:, None]
+
+    default_colors = {Approach.BAMCP: "steelblue", Approach.BAMCP_ES: "darkorange"}
+    colors = colors or default_colors
+    labels = {Approach.BAMCP: "BAMCP", Approach.BAMCP_ES: "FIHP"}
+    approaches = [Approach.BAMCP, Approach.BAMCP_ES]
+    x_labels = [str(d) for d in depths]
+
+    for col, (beta, alpha) in enumerate(param_pairs):
+        ax_reward, ax_time = axes[0][col], axes[1][col]
+        flat_results = results_by_params_and_depth_and_approach.get((beta, alpha), {})
+
+        reward_data = {a: [] for a in approaches}
+        time_data = {a: [] for a in approaches}
+        for d in depths:
+            per_depth = flat_results.get(d, {})
+            for a in approaches:
+                rows_ = per_depth.get(a, [])
+                reward_data[a].append(np.array([r["total_reward"] for r in rows_]))
+                time_data[a].append(np.array([r["total_time"] for r in rows_]))
+
+        grouped_boxplot(ax_reward, reward_data, x_labels, approaches,
+                         colors={a.value: colors[a] for a in approaches})
+        grouped_boxplot(ax_time, time_data, x_labels, approaches,
+                         colors={a.value: colors[a] for a in approaches})
+
+        #ax_reward.set_title(fr"$\beta_0={beta:g}$, $\alpha_0={alpha:g}$")
+        ax_reward.set_title(fr"$\beta_0={beta:g}$")
+        ax_reward.set_xlabel("")
+        ax_time.set_xlabel("")
+
+        for ax in (ax_reward, ax_time):
+            ax.grid(alpha=0.3, axis="y")
+            leg = ax.get_legend()
+            if leg:
+                leg.remove()
+            if col > 0:
+                ax.set_ylabel("")
+
+        if col == 0:
+            ax_reward.set_ylabel("Total reward")
+            ax_time.set_ylabel("Wall-clock time (s)")
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color=colors[a]) for a in approaches]
+    fig.legend(handles, [labels[a] for a in approaches], loc="upper center",
+               ncol=2, bbox_to_anchor=(0.5, 0.97), frameon=True)
+
+    fig.supxlabel("DAG depth", y=0.0)
+    fig.subplots_adjust(hspace=0.1  , wspace=0, top=0.82)
+
+    if pdf_save_path:
+        pdf_save_path = pdf_save_path.replace(".pdf", "_new.pdf")
+        fig.savefig(pdf_save_path)
+        print(f"Saved: {pdf_save_path}")
+    if png_save_path:
+        png_save_path = png_save_path.replace(".png", "_new.png")
+        fig.savefig(png_save_path, dpi=150)
+        print(f"Saved: {png_save_path}")
+    return fig, axes

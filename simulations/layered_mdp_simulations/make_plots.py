@@ -6,7 +6,8 @@ from simulations.approach import Approach
 from simulations.layered_mdp_simulations.sweep_config import PARAM_PAIRS, CACHE_PATH, cached_fn, fn
 from simulations.paper_plots import (
     plot_metric_vs_length, plot_switch_step_vs_length,
-    plot_switch_step_vs_human_obs, set_paper_style, plot_reward_and_time_combined_boxplot
+    plot_switch_step_vs_human_obs, set_paper_style, plot_reward_and_time_combined_boxplot,
+    plot_reward_time_combined_stacked,
 )
 from simulations.layered_mdp_simulations.belief_plots import plot_beliefs, plot_beliefs_both
 
@@ -31,6 +32,7 @@ def df_to_nested(df, beta, alpha):
 
 
 def make_plots(df):
+    results_by_params_and_depth_and_approach = {}
 
     for true_beta, true_alpha in PARAM_PAIRS:
         flat_results = df_to_nested(df, true_beta, true_alpha)
@@ -38,37 +40,44 @@ def make_plots(df):
             print(f"No data for beta={true_beta}, alpha={true_alpha} -- skipping")
             continue
 
-        #tag = f"b{true_beta}_a{true_alpha}"
+        results_by_params_and_depth_and_approach[(true_beta, true_alpha)] = flat_results
+
+        param_tag = f"_b{true_beta}_a{true_alpha}"  # distinct suffix per beta/alpha
 
         plot_metric_vs_length(
             flat_results, metric="total_reward", ylabel="Total reward",
-            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_reward_vs_depth{tag}.pdf",
-            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_reward_vs_depth{tag}.png",
+            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_reward_vs_depth{tag}{param_tag}.pdf",
+            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_reward_vs_depth{tag}{param_tag}.png",
         )
         plot_metric_vs_length(
             flat_results, metric="total_time", ylabel="Wall-clock time (s)",
-            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_time_vs_depth{tag}.pdf",
-            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_time_vs_depth{tag}.png",
+            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_time_vs_depth{tag}{param_tag}.pdf",
+            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_time_vs_depth{tag}{param_tag}.png",
         )
-        plot_switch_step_vs_length(
-            flat_results, ylabel="Switch step",
-            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_switchstep_vs_depth{tag}.pdf",
-            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_switchstep_vs_depth{tag}.png",
-        )
+        
+        #plot_switch_step_vs_length(
+        #    flat_results, ylabel="Switch step",
+        #    pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_switchstep_vs_depth{tag}{param_tag}.pdf",
+        #    png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_switchstep_vs_depth{tag}{param_tag}.png",
+        #)
 
         depths = sorted(flat_results.keys())
         plot_reward_and_time_combined_boxplot(
             flat_results, depths,
-            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_reward_time_combined{tag}.pdf",
-            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_reward_time_combined{tag}.png",
+            pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_reward_time_combined{tag}{param_tag}.pdf",
+            png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_reward_time_combined{tag}{param_tag}.png",
         )
 
         summary_df = summarize_switch_stats(flat_results)
         print(f"\n=== beta={true_beta}, alpha={true_alpha} ===")
         print(summary_df.round(1))
-        summary_df.round(1).to_latex(f"{LATEX_TABLES_DIR}/switch_stats_{tag}.tex", index=False)
+        summary_df.round(1).to_latex(f"{LATEX_TABLES_DIR}/switch_stats_{tag}{param_tag}.tex", index=False)
 
-
+    plot_reward_time_combined_stacked(
+        results_by_params_and_depth_and_approach, PARAM_PAIRS,
+        pdf_save_path=f"{PAPER_PLOTS_DIR}/fig_reward_time_stacked{tag}.pdf",
+        png_save_path=f"{PRESENTATION_PLOTS_DIR}/fig_reward_time_stacked{tag}.png",
+    )
 
 def summarize_switch_stats(results_by_depth_and_approach, fihp_approach=Approach.BAMCP_ES,
                             bamcp_approach=Approach.BAMCP):
@@ -127,9 +136,10 @@ def summarize_switch_stats(results_by_depth_and_approach, fihp_approach=Approach
 
 
 if __name__ == "__main__":
-    set_paper_style()
+    set_paper_style(base_size=12)
     df = pd.read_pickle(cached_fn)
     #print(f"Loaded {len(df)} rows from {cached_fn}")
     make_plots(df)
+    set_paper_style(base_size=12)
     #plot_beliefs(PAPER_PLOTS_DIR, PRESENTATION_PLOTS_DIR, tag, depth=150, layout_idx=0, sims=range(1, 2))
-    #plot_beliefs_both(PAPER_PLOTS_DIR, PRESENTATION_PLOTS_DIR, tag, depth=150, layout_idx=0, sims=range(1, 2))
+    plot_beliefs_both(PAPER_PLOTS_DIR, PRESENTATION_PLOTS_DIR, tag, depth=150, layout_idx=0, sims=range(1, 2))

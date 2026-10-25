@@ -15,10 +15,29 @@ grid_tag = get_grid_tag(lb_beta, ub_beta, lb_alpha, ub_alpha, grid_res)
 
 
 def extract_row(result_dict, depth, layout_idx, beta, alpha, approach):
+    #stop_info = result_dict.get("stop_info") or {}
+    #is_auto = result_dict.get("is_auto")
+    #stop_step = stop_info.get("stop_step")
+    #human_obs = sum(1 for a in is_auto[:stop_step] if not a) if (is_auto and stop_step) else None
+
     stop_info = result_dict.get("stop_info") or {}
     is_auto = result_dict.get("is_auto")
-    stop_step = stop_info.get("stop_step")
-    human_obs = sum(1 for a in is_auto[:stop_step] if not a) if (is_auto and stop_step) else None
+    stopped_early = bool(stop_info.get("stopped_early", False))
+
+    stop_step = stop_info.get("stop_step") if stopped_early else None
+
+    #human_obs = sum(1 for a in is_auto[:stop_step] if not a) if (is_auto and stop_step) else None
+
+    human_obs = (
+        sum(not a for a in is_auto[:stop_step])
+        if stopped_early and is_auto is not None and stop_step is not None 
+        else None
+    )
+
+    total_human_obs = (
+        sum(not a for a in is_auto)
+        if is_auto is not None else None
+    )
 
     return {
         "depth": depth, "layout_idx": layout_idx, "beta": beta, "alpha": alpha,
@@ -30,6 +49,7 @@ def extract_row(result_dict, depth, layout_idx, beta, alpha, approach):
         "stop_step": stop_step,
         "trigger_param": stop_info.get("trigger_param"),
         "human_obs_at_switch": human_obs,
+        "total_human_obs": total_human_obs,
     }
 
 
